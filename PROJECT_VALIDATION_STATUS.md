@@ -1,23 +1,30 @@
-# Status pemeriksaan source SIGNAL v1.0
+# Status pemeriksaan source SIGNAL v1.2
 
-Tanggal pemeriksaan: 19 Oktober 2026.
+Paket v1.2 menambahkan menu Absensi Guru serta menggabungkan UI absensi dengan persistensi IndexedDB lokal. Status ini membedakan perubahan source dari pemeriksaan yang belum dijalankan.
 
-## Pemeriksaan yang berhasil
+## Perubahan yang diterapkan langsung pada source
+- Menu `Absensi Guru` sudah terhubung pada navigasi utama.
+- Input massal harian per tanggal untuk guru aktif dengan penyimpanan sekaligus.
+- Input bulanan untuk semua guru aktif atau subset guru; memakai hari aktif, melewati hari libur, dan meminta konfirmasi ketika menimpa catatan.
+- Input individual untuk guru/tanggal dengan catatan opsional.
+- Rekap bulanan dengan pilihan bulan dan ceklis guru, hitungan Hadir/Sakit/Izin/Alpa/Dinas luar/Belum diisi, ekspor CSV, dan dialog cetak yang diformat untuk A4 landscape agar bisa disimpan sebagai PDF.
+- Pengaturan daftar tanggal hari libur; perubahan pada hari libur tidak menghapus catatan absensi yang sudah ada.
+- Domain helper untuk tanggal lokal, penentuan hari kerja, dan rekap. Catatan absensi tersimpan di IndexedDB terpisah dari data jadwal untuk menghindari migrasi/risiko merusak database yang ada.
+- Versi package dinaikkan ke 1.2.0 dan spesifikasi fitur absensi ditambahkan.
 
-- Semua file TypeScript/TSX diparse/transpile untuk memastikan tidak ada diagnostic sintaks.
-- Modul domain (`types`, `time`, `seed`, `validator`, `generator`) lolos pemeriksaan TypeScript strict dengan compiler TypeScript tersedia di lingkungan kerja.
-- Smoke test domain yang dijalankan langsung terhadap hasil kompilasi:
-  - kasus kecil yang feasible menghasilkan kandidat valid;
-  - dataset demo menghasilkan 160 penempatan dan lolos validator;
-  - bentrok guru pada slot yang sama ditolak;
-  - ID issue konsisten untuk input yang sama;
-  - blok mapel 4 JP berturut-turut ditolak;
-  - batas guru multimapel setelah istirahat diperiksa;
-  - struktur waktu 8 JP dan 10 JP dengan banyak istirahat tidak memiliki sela/overlap waktu.
-- Pemeriksaan statis tambahan mendeteksi dan memperbaiki beberapa kesalahan source sebelum paket disiapkan.
+## Keterbatasan yang diketahui
+- Data absensi belum digabungkan ke backup/restore workspace jadwal; ekspor CSV atau PDF rekap sebagai salinan berkala.
+- Data tersimpan lokal pada browser/perangkat saat ini dan tidak disinkronkan antar perangkat.
+- “Cetak / Simpan PDF” menggunakan print dialog browser; pengguna perlu memilih “Simpan sebagai PDF”.
+- Tipe slot aktivitas, Quick Validation Report, drag-and-drop tervalidasi, statistik beban guru khusus, serta ekspor PDF jadwal belum diklaim selesai hanya karena ada di prompt.
 
-## Pemeriksaan yang belum dapat diselesaikan di lingkungan ini
+## Pemeriksaan build/test
+Percobaan `npm install --no-audit --no-fund` pada lingkungan penyusunan ini mengalami timeout, jadi `npm test` dan `npm run build` belum berhasil dijalankan. Jangan menafsirkan hal ini sebagai tes lulus. Setelah dependensi tersedia, jalankan:
 
-`npm install` tidak selesai karena registry npm tidak dapat di-resolve (DNS `EAI_AGAIN`). Karena dependensi tidak berhasil dipasang, `npm run build` penuh menggunakan Vite dan `npm test` melalui Vitest **belum dapat dijalankan di lingkungan ini**. Project memiliki script untuk menjalankan kedua perintah tersebut setelah paket npm dapat diakses, misalnya setelah diimpor ke Google AI Studio atau di komputer dengan koneksi jaringan.
+```bash
+npm install
+npm test
+npm run build
+```
 
-Karena itu, statusnya adalah **domain smoke tests lulus, full dependency build belum diverifikasi**; jangan menafsirkannya sebagai sertifikasi produksi. Jalankan `npm install`, `npm test`, dan `npm run build` setelah impor, serta lakukan uji penerimaan dengan data nyata yang telah disamarkan.
+Perbaiki semua error yang muncul; jangan melemahkan constraint generator/validator untuk meloloskan build.

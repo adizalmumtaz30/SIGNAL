@@ -1,4 +1,4 @@
-# SIGNAL — Google AI Studio Project v1.0
+# SIGNAL — Google AI Studio Project v1.2
 
 Aplikasi workspace penjadwalan pelajaran MTs berbahasa Indonesia. Project source code ini menggunakan React + TypeScript + Vite, penyimpanan lokal IndexedDB, generator pencarian deterministik, dan validator hard-constraint. UI dibuat khusus dengan gaya Deep Teal, warm ivory, dan aksen brass; bukan template dashboard default.
 
@@ -6,9 +6,22 @@ Aplikasi workspace penjadwalan pelajaran MTs berbahasa Indonesia. Project source
 
 Ini adalah **implementasi MVP yang dapat dibangun**, bukan klaim bahwa seluruh skenario produksi telah diverifikasi oleh sekolah. Data awal adalah data DEMO sintetis. Ganti data demo sebelum dipakai untuk jadwal sebenarnya.
 
+## Pembaruan v1.2
+
+- Menambahkan menu Absensi Guru dengan input harian massal, input status bulanan untuk semua guru atau guru yang dipilih, input individual, rekap dengan pilihan bulan dan guru, ekspor CSV, dan cetak / Simpan PDF melalui dialog print browser.
+- Menambahkan pengaturan tanggal hari libur; tanggal libur dikecualikan dari input massal bulanan dan hitungan hari kerja pada rekap. Catatan individual khusus pada hari libur tetap dapat disimpan setelah konfirmasi.
+- Catatan absensi dan daftar hari libur disimpan pada IndexedDB lokal terpisah agar perubahan tidak mengganggu penyimpanan jadwal lama. Data tidak tersinkron antar perangkat. Detail alur dan uji penerimaan: `docs/FEATURE_ABSENSI_GURU.md`.
+
+## Pembaruan v1.1
+
+- Penyempurnaan gaya visual menuju quiet luxury: palet lebih tenang, ornamen dan bayangan dikurangi, animasi lebih singkat.
+- Pilihan hari di UI kini mencakup Senin–Sabtu; default demo tetap Senin–Jumat.
+- Prompt implementasi bertahap untuk tipe slot aktivitas, laporan validasi cepat, drag-and-drop tervalidasi, statistik beban guru, dan ekspor PDF disertakan. Fitur-fitur tersebut harus diaudit dan diimplementasikan serta diuji di Google AI Studio; keberadaannya dalam prompt bukan bukti bahwa semuanya sudah tersedia di kode.
+
 ## Fitur yang tersedia
 
 - Dashboard ringkasan, jadwal kelas per hari/JP, data master kelas/guru/mapel, kebutuhan JP.
+- Absensi guru: input massal per tanggal, penerapan status bulanan untuk semua atau guru tertentu (dengan konfirmasi saat menimpa), catatan per guru, rekap guru/bulan yang dapat dipilih, ekspor CSV, cetak / Simpan PDF, serta kalender hari libur.
 - Generator kandidat deterministic-seeded dengan status eksplisit `INVALID_INPUT`, `SEARCH_LIMIT_REACHED`, `INFEASIBLE`, `SUCCESS`, atau `FAILED`.
 - Validator deterministik untuk bentrok kelas/guru, kualifikasi guru, batas beban mingguan, alokasi JP, blok mapel, dan aturan guru multi-mapel setelah jeda.
 - Draft dan penerbitan versi jadwal, riwayat snapshot, edit sel, ekspor CSV, dan backup/restore JSON dengan checksum.
@@ -66,6 +79,13 @@ Dokumentasi resmi: https://ai.google.dev/gemini-api/docs/aistudio-build-mode
 ## Cara kerja validator
 
 Generator mencari kandidat. Validator memeriksa kandidat terhadap aturan kode. Saran AI tidak pernah dianggap sebagai bukti bahwa jadwal valid. Kandidat hanya boleh diterbitkan setelah validasi final berhasil.
+
+## Catatan absensi guru
+
+- Rekap menghitung hanya hari kerja berdasarkan hari aktif di Pengaturan jadwal, dikurangi tanggal yang dicatat sebagai hari libur. Hari Minggu tidak termasuk hari aktif yang tersedia di model.
+- Penerapan status bulanan mengisi satu status pada seluruh hari kerja di bulan terpilih untuk cakupan guru yang dipilih. Gunakan input harian atau per guru untuk mengoreksi pengecualian. Data lama yang akan ditimpa memerlukan konfirmasi.
+- Cetak / Simpan PDF memakai dialog cetak browser. Pilih “Save as PDF” / “Simpan sebagai PDF” pada tujuan printer untuk membuat berkas PDF.
+- Penyimpanan absensi terpisah dari backup workspace jadwal saat ini. Ekspor rekap CSV atau PDF secara berkala untuk menyimpan salinan di luar browser. Menghapus data situs/browser dapat menghilangkan data lokal.
 
 ## Batas implementasi MVP
 

@@ -1,9 +1,9 @@
 {
   "name": "signal-mts-scheduler",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "type": "module",
-  "description": "SIGNAL — premium local-first scheduling workspace for MTs",
+  "description": "SIGNAL — premium local-first academic scheduling and teacher attendance workspace for MTs",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:server\"",
     "dev:web": "vite --host 0.0.0.0",
