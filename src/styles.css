@@ -802,3 +802,100 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .ai-response-error { color: #8b3c34; background: #fff0ed; border: 1px solid #f2d2cb; }
 .ai-response-output { color: var(--ink, #193b39); background: #f3f6ee; border: 1px solid #dde7d8; }
 .ai-response-output p { margin: 0; white-space: pre-wrap; }
+
+
+
+/* SIGNAL Quiet Luxury UI refresh — 2026-10
+   Visual-only refinement: calm surfaces, restrained accents, clearer hierarchy. */
+:root {
+  --teal-950: #102f30;
+  --teal-900: #153839;
+  --teal-850: #1b4544;
+  --teal-800: #245451;
+  --teal-700: #356b65;
+  --teal-600: #4a8077;
+  --teal-100: #e1ebe5;
+  --teal-50: #f1f5f1;
+  --ivory: #f6f4ee;
+  --paper: #fffefa;
+  --paper-dim: #fbfaf6;
+  --ink: #203c3b;
+  --muted: #7b8984;
+  --muted-dark: #64756f;
+  --line: #e9e7df;
+  --line-strong: #dcded5;
+  --gold: #b79a6b;
+  --gold-pale: #f4eddf;
+  --shadow-soft: 0 8px 28px rgba(26, 49, 45, .035);
+}
+body { color: var(--ink); background: var(--ivory); }
+button, input, select, textarea { transition: background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease; }
+.sidebar {
+  background: #173b3b;
+  box-shadow: 1px 0 0 rgba(18, 48, 46, .06);
+}
+.sidebar:before {
+  height: 2px;
+  background: #b79a6b;
+  opacity: .85;
+}
+.surface-card, .stat-card, .settings-card, .toolbar-card, .backup-status-panel,
+.validation-banner, .master-summary-item, .quick-action-row {
+  box-shadow: 0 5px 22px rgba(31, 52, 47, .025);
+}
+.surface-card, .stat-card, .settings-card {
+  border-color: #e9e7df;
+}
+.button {
+  box-shadow: none;
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+}
+.button:active { transform: translateY(1px); }
+.button-primary {
+  box-shadow: none;
+}
+.page-heading h1, .section-intro-row h2 {
+  letter-spacing: -.035em;
+}
+.page-heading p {
+  color: #75837e;
+}
+.topbar {
+  border-bottom-color: rgba(221, 222, 212, .75);
+}
+.content-scroll {
+  scrollbar-color: #c9d2ca transparent;
+}
+.data-table-wrap, .candidate-table-wrap, .schedule-table-wrap {
+  border-color: #e7e6de;
+  box-shadow: none;
+}
+.data-table th, .candidate-table th {
+  background: #f8f7f2;
+  color: #697a74;
+  letter-spacing: .045em;
+}
+.data-table td, .candidate-table td {
+  border-bottom-color: #efeee8;
+}
+input, select, textarea {
+  border-color: #e0e2d9;
+  background-color: #fffefa;
+}
+input:hover, select:hover, textarea:hover { border-color: #cbd4ca; }
+input:focus, select:focus, textarea:focus {
+  border-color: #71958a;
+  box-shadow: 0 0 0 3px rgba(74, 128, 119, .09);
+  outline: none;
+}
+.modal-scrim { backdrop-filter: blur(5px); }
+.modal-panel, .modal-card {
+  box-shadow: 0 24px 70px rgba(17, 39, 36, .16);
+  border-color: #e7e6dd;
+}
+.toast { box-shadow: 0 10px 32px rgba(20, 43, 39, .11); }
+@media (prefers-reduced-motion: no-preference) {
+  .surface-card, .stat-card, .settings-card, .button {
+    transition-duration: .16s;
+  }
+}
