@@ -1,0 +1,8 @@
+{
+  "name": "SIGNAL",
+  "description": "SIGNAL — intelligent academic scheduling and teacher attendance workspace for MTs.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
