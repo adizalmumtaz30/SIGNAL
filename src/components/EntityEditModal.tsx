@@ -215,11 +215,18 @@ export function EntityEditModal({
         setError('Alokasi JP harus berupa bilangan bulat antara 1 sampai 50.');
         return;
       }
-      // Check teacher qualification
+      // Ensure teacher exists
       const tch = state.teachers.find((t) => t.id === reqTeacherId);
-      if (!tch?.subjectIds.includes(reqSubjectId)) {
-        setError('Guru yang dipilih belum memiliki kualifikasi untuk mata pelajaran ini.');
+      if (!tch) {
+        setError('Pilih guru pengampu yang valid.');
         return;
+      }
+      // If teacher does not yet have subjectId, auto-register qualification
+      if (reqSubjectId && !tch.subjectIds.includes(reqSubjectId)) {
+        onSaveTeacher({
+          ...tch,
+          subjectIds: [...tch.subjectIds, reqSubjectId],
+        }, false);
       }
 
       const item: Requirement = {
@@ -585,24 +592,33 @@ export function EntityEditModal({
               </div>
 
               <div className="field-group">
-                <label>Guru Pengampu Berkualifikasi</label>
+                <label>Guru Pengampu</label>
                 <select
                   required
                   value={reqTeacherId}
                   onChange={(e) => setReqTeacherId(e.target.value)}
                 >
                   <option value="">Pilih Guru Pengampu</option>
-                  {state.teachers
-                    .filter(
-                      (t) =>
-                        t.isActive &&
-                        (!reqSubjectId || t.subjectIds.includes(reqSubjectId))
-                    )
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.code}) - maks {t.maxWeeklyJP} JP
-                      </option>
-                    ))}
+                  {state.teachers.filter((t) => t.isActive && reqSubjectId && t.subjectIds.includes(reqSubjectId)).length > 0 && (
+                    <optgroup label="Guru Sesuai Kualifikasi Mapel">
+                      {state.teachers
+                        .filter((t) => t.isActive && reqSubjectId && t.subjectIds.includes(reqSubjectId))
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.code}) - maks {t.maxWeeklyJP} JP
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Semua Guru Terdaftar Lainnya (Lintas Mapel)">
+                    {state.teachers
+                      .filter((t) => !reqSubjectId || !t.subjectIds.includes(reqSubjectId))
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.code}) - maks {t.maxWeeklyJP} JP
+                        </option>
+                      ))}
+                  </optgroup>
                 </select>
               </div>
 

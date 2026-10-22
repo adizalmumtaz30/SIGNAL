@@ -37,6 +37,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  TrendingUp,
   Undo2,
   Upload,
   UserCheck,
@@ -79,6 +80,7 @@ import { QuickValidationModal } from './components/QuickValidationModal';
 import { SchedulePdfExportModal } from './components/SchedulePdfExportModal';
 import { EntityEditModal, type EntityEditTarget } from './components/EntityEditModal';
 import { AiConflictHelper } from './components/AiConflictHelper';
+import { InfoNotice } from './components/InfoNotice';
 
 type ScreenId =
   | 'overview'
@@ -176,6 +178,7 @@ export default function App() {
   const [editingSlot, setEditingSlot] = useState<EditSlotContext | null>(null);
   const [editingSubject, setEditingSubject] = useState('');
   const [editingTeacher, setEditingTeacher] = useState('');
+  const [customTeacherName, setCustomTeacherName] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastGeneratorResult, setLastGeneratorResult] = useState<{ status: GeneratorStatus; message: string; nodes: number } | null>(null);
@@ -389,22 +392,67 @@ export default function App() {
     setEditingSlot({ classId, day, jpNo });
     setEditingSubject(entry?.subjectId ?? '');
     setEditingTeacher(entry?.teacherId ?? '');
+    setCustomTeacherName('');
   };
 
   const saveSlotEditor = (event: FormEvent) => {
     event.preventDefault();
     if (!workspace || !editingSlot) return;
     const { classId, day, jpNo } = editingSlot;
+
+    let targetTeacherId = editingTeacher;
+    let nextTeachers = [...workspace.teachers];
+
+    if (editingTeacher === '__NEW_CUSTOM__') {
+      if (!customTeacherName.trim()) {
+        notify('Mohon masukkan nama guru baru atau guru tamu.', 'warning');
+        return;
+      }
+      const newTeacherId = `TCH-EXT-${Date.now().toString(36)}`;
+      const initials = customTeacherName
+        .trim()
+        .split(/\s+/)
+        .map((w) => w[0])
+        .join('')
+        .slice(0, 4)
+        .toUpperCase();
+
+      const newTeacher: Teacher = {
+        id: newTeacherId,
+        name: customTeacherName.trim(),
+        code: initials || 'GT',
+        subjectIds: editingSubject ? [editingSubject] : [],
+        maxWeeklyJP: 30,
+        isActive: true,
+      };
+      nextTeachers.push(newTeacher);
+      targetTeacherId = newTeacherId;
+    } else if (editingTeacher && editingSubject) {
+      const tIdx = nextTeachers.findIndex((t) => t.id === editingTeacher);
+      if (tIdx >= 0 && !nextTeachers[tIdx].subjectIds.includes(editingSubject)) {
+        nextTeachers[tIdx] = {
+          ...nextTeachers[tIdx],
+          subjectIds: [...nextTeachers[tIdx].subjectIds, editingSubject],
+        };
+      }
+    }
+
     updateWorkspace((current) => {
       const previous = current.draft ?? current.activeSchedule ?? [];
       const without = previous.filter((entry) => !(entry.classId === classId && entry.day === day && entry.jpNo === jpNo));
-      const next = editingSubject && editingTeacher ? [...without, {
-        id: `MAN-${Date.now().toString(36)}`, classId, day, jpNo, subjectId: editingSubject, teacherId: editingTeacher,
+      const next = editingSubject && targetTeacherId ? [...without, {
+        id: `MAN-${Date.now().toString(36)}`, classId, day, jpNo, subjectId: editingSubject, teacherId: targetTeacherId,
       }] : without;
-      return { ...current, draft: next, dataMode: 'custom' };
+      return {
+        ...current,
+        teachers: nextTeachers,
+        draft: next,
+        dataMode: 'custom',
+      };
     }, true);
     setEditingSlot(null);
-    notify('Perubahan disimpan sebagai draft. Tersimpan.', 'success');
+    setCustomTeacherName('');
+    notify('Perubahan jadwal disimpan sebagai draft. Berhasil.', 'success');
   };
 
   const publishDraft = () => {
@@ -514,19 +562,25 @@ export default function App() {
       return;
     }
     const teacher = workspace.teachers.find((item) => item.id === reqForm.teacherId);
-    if (!teacher?.subjectIds.includes(reqForm.subjectId)) {
-      notify('Guru belum mempunyai kualifikasi untuk mapel ini.', 'warning');
+    if (!teacher) {
+      notify('Pilih guru pengampu yang terdaftar.', 'warning');
       return;
     }
     updateWorkspace((current) => {
+      const nextTeachers = current.teachers.map((t) => {
+        if (t.id === reqForm.teacherId && !t.subjectIds.includes(reqForm.subjectId)) {
+          return { ...t, subjectIds: [...t.subjectIds, reqForm.subjectId] };
+        }
+        return t;
+      });
       const existing = current.requirements.find((item) => item.classId === reqForm.classId && item.subjectId === reqForm.subjectId && item.teacherId === reqForm.teacherId);
       const requirements = existing
         ? current.requirements.map((item) => item.id === existing.id ? { ...item, requiredJP } : item)
         : [...current.requirements, { id: `REQ-${Date.now().toString(36)}`, classId: reqForm.classId, subjectId: reqForm.subjectId, teacherId: reqForm.teacherId, requiredJP }];
-      return { ...current, requirements, draft: null };
+      return { ...current, teachers: nextTeachers, requirements, draft: null };
     }, true);
     setReqFormOpen(false);
-    notify('Alokasi JP tersimpan. Tersimpan.', 'success');
+    notify('Alokasi JP tersimpan. Kualifikasi guru disesuaikan.', 'success');
   };
 
   const deleteRequirement = (requirement: Requirement) => {
@@ -791,6 +845,7 @@ export default function App() {
                 state={workspace}
                 onNavigateToSchedule={() => navigate('schedule')}
                 onNavigateToMaster={() => navigate('master')}
+                onNavigateToRequirements={() => navigate('requirements')}
               />
             )}
 
@@ -834,6 +889,7 @@ export default function App() {
                 onEditTeacher={(t) => setEntityModalTarget({ kind: 'teacher', isNew: false, item: t })}
                 onEditSubject={(s) => setEntityModalTarget({ kind: 'subject', isNew: false, item: s })}
                 onOpenAddModal={(kind) => setEntityModalTarget({ kind, isNew: true })}
+                onNavigate={navigate}
               />
             )}
 
@@ -943,11 +999,42 @@ export default function App() {
                 disabled={!editingSubject}
               >
                 <option value="">Pilih guru</option>
-                {workspace.teachers.filter((teacher) => teacher.isActive && editingSubject && teacher.subjectIds.includes(editingSubject)).map((teacher) => (
-                  <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
-                ))}
+                <option value="__NEW_CUSTOM__">+ Input Guru Baru / Tamu / Pengganti (Luar Master)</option>
+                {workspace.teachers.filter((teacher) => teacher.isActive && editingSubject && teacher.subjectIds.includes(editingSubject)).length > 0 && (
+                  <optgroup label="Guru Sesuai Kualifikasi Mapel">
+                    {workspace.teachers
+                      .filter((teacher) => teacher.isActive && editingSubject && teacher.subjectIds.includes(editingSubject))
+                      .map((teacher) => (
+                        <option key={teacher.id} value={teacher.id}>{teacher.name} ({teacher.code})</option>
+                      ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Guru Terdaftar Lainnya (Lintas Mapel)">
+                  {workspace.teachers
+                    .filter((teacher) => !editingSubject || !teacher.subjectIds.includes(editingSubject))
+                    .map((teacher) => (
+                      <option key={teacher.id} value={teacher.id}>{teacher.name} ({teacher.code})</option>
+                    ))}
+                </optgroup>
               </select>
             </div>
+
+            {editingTeacher === '__NEW_CUSTOM__' && (
+              <div className="field-group" style={{ background: '#f3f8f5', padding: '12px', borderRadius: '8px', border: '1px solid #bed6c7', marginTop: '6px' }}>
+                <label style={{ color: '#16483f' }}>Nama Guru Baru / Tamu / Pengganti</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Misal: Ustadz M. Syamsul Huda, S.Pd.I (Guru Tamu)"
+                  value={customTeacherName}
+                  onChange={(e) => setCustomTeacherName(e.target.value)}
+                  autoFocus
+                />
+                <small style={{ color: '#27594e' }}>
+                  Guru ini akan otomatis didaftarkan dan dapat langsung dijadwalkan.
+                </small>
+              </div>
+            )}
             <div className="modal-note">
               <ShieldCheck size={16} />
               <span>Perubahan ditaruh ke draft. Validator deterministik langsung memeriksa bentrok dan kelengkapan.</span>
@@ -1023,13 +1110,15 @@ function LoadingScreen() {
   );
 }
 
-function PageHeading({ kicker, title, description, actions }: { kicker: string; title: string; description: string; actions?: ReactNode }) {
+function PageHeading({ kicker, title, description, actions }: { kicker: string; title: string; description?: string; actions?: ReactNode }) {
   return (
     <div className="page-heading">
       <div>
         <div className="eyebrow"><span className="eyebrow-line" />{kicker}</div>
-        <h1>{title}</h1>
-        <p>{description}</p>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          <h1 style={{ margin: 0 }}>{title}</h1>
+          {description && <InfoNotice text={description} />}
+        </div>
       </div>
       {actions && <div className="page-heading-actions">{actions}</div>}
     </div>
@@ -1125,11 +1214,10 @@ function OperatorOverviewScreen({
           <div className="hero-label">
             <span className="hero-label-dot" /> SEMESTER {state.settings.semester.toUpperCase()} · {state.settings.schoolName}
           </div>
-          <h1>Penyusunan Jadwal &amp; Presensi.</h1>
-          <p>
-            Satu klik untuk membuat jadwal pelajaran otomatis yang bebas bentrok guru dan kelas.
-            Validator deterministik menguji seluruh aturan secara ketat.
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', margin: '16px 0 10px' }}>
+            <h1 style={{ margin: 0 }}>Penyusunan Jadwal &amp; Presensi.</h1>
+            <InfoNotice text="Satu klik untuk membuat jadwal pelajaran otomatis yang bebas bentrok guru dan kelas. Validator deterministik menguji seluruh aturan secara ketat." />
+          </div>
 
           <div className="hero-actions">
             <Button
@@ -2322,6 +2410,7 @@ function MasterScreen({
   onEditTeacher,
   onEditSubject,
   onOpenAddModal,
+  onNavigate,
 }: {
   state: AppState;
   activeTab: MasterTab;
@@ -2339,6 +2428,7 @@ function MasterScreen({
   onEditTeacher: (t: Teacher) => void;
   onEditSubject: (s: Subject) => void;
   onOpenAddModal?: (kind: 'class' | 'teacher' | 'subject') => void;
+  onNavigate?: (screen: ScreenId) => void;
 }) {
   const filteredClasses = state.classes.filter((item) => `${item.name} ${item.level}`.toLowerCase().includes(search.toLowerCase()));
   const filteredTeachers = state.teachers.filter((item) => `${item.name} ${item.code}`.toLowerCase().includes(search.toLowerCase()));
@@ -2346,6 +2436,29 @@ function MasterScreen({
 
   return (
     <>
+      {/* Consolidated Academic Hub Switcher */}
+      {onNavigate && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+          <button className="button button-primary" style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}>
+            Data Master (Kelas, Guru, Mapel)
+          </button>
+          <button
+            className="button button-secondary"
+            onClick={() => onNavigate('requirements')}
+            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
+          >
+            Alokasi Kebutuhan JP
+          </button>
+          <button
+            className="button button-secondary"
+            onClick={() => onNavigate('workload')}
+            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
+          >
+            Analisis Beban Guru
+          </button>
+        </div>
+      )}
+
       <PageHeading
         kicker="DATA MASTER REPOSITORY"
         title="Data Master Madrasah"
@@ -2509,46 +2622,86 @@ function MasterScreen({
                   <th>Guru</th>
                   <th>Kode</th>
                   <th>Kualifikasi Mapel</th>
-                  <th>Batas JP</th>
+                  <th>Beban Kebutuhan (JP)</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTeachers.map((t) => (
-                  <tr key={t.id}>
-                    <td><strong>{t.name}</strong></td>
-                    <td><span className="code-pill">{t.code}</span></td>
-                    <td>
-                      <div className="tag-list">
-                        {t.subjectIds.map((sid) => {
-                          const sub = getSubject(state, sid);
-                          return sub ? <span key={sid} className="subject-tag"><i style={{ background: sub.color }} />{sub.code}</span> : null;
-                        })}
-                      </div>
-                    </td>
-                    <td>{t.maxWeeklyJP} JP</td>
-                    <td><StatusPill status={t.isActive ? 'success' : 'neutral'}>{t.isActive ? 'Aktif' : 'Nonaktif'}</StatusPill></td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div className="table-row-actions-group">
-                        <button
-                          className="icon-button table-row-action edit-action"
-                          onClick={() => onEditTeacher(t)}
-                          title="Edit data guru"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                        <button
-                          className="icon-button table-row-action"
-                          onClick={() => onDelete('teachers', t.id)}
-                          title="Hapus guru"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredTeachers.map((t) => {
+                  const teacherReqs = state.requirements.filter((r) => r.teacherId === t.id);
+                  const totalAssignedJP = teacherReqs.reduce((sum, r) => sum + r.requiredJP, 0);
+                  const maxJP = t.maxWeeklyJP || 24;
+                  const pct = Math.round((totalAssignedJP / maxJP) * 100);
+                  const isOverload = totalAssignedJP > maxJP;
+                  const isFull = totalAssignedJP === maxJP;
+
+                  return (
+                    <tr key={t.id}>
+                      <td><strong>{t.name}</strong></td>
+                      <td><span className="code-pill">{t.code}</span></td>
+                      <td>
+                        <div className="tag-list">
+                          {t.subjectIds.map((sid) => {
+                            const sub = getSubject(state, sid);
+                            return sub ? <span key={sid} className="subject-tag"><i style={{ background: sub.color }} />{sub.code}</span> : null;
+                          })}
+                        </div>
+                      </td>
+                      <td style={{ minWidth: '150px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', fontWeight: 600 }}>
+                            <span style={{ color: isOverload ? '#b24c3d' : '#173637' }}>
+                              {totalAssignedJP} / {maxJP} JP
+                            </span>
+                            <span style={{ color: isOverload ? '#b24c3d' : '#7a8a86', fontSize: '11px' }}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <div style={{ width: '100%', height: '5px', background: '#e1e9e5', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: `${Math.min(100, pct)}%`,
+                                height: '100%',
+                                background: isOverload ? '#b24c3d' : isFull ? '#2f7771' : '#49886d',
+                                borderRadius: '3px',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td><StatusPill status={t.isActive ? 'success' : 'neutral'}>{t.isActive ? 'Aktif' : 'Nonaktif'}</StatusPill></td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="table-row-actions-group">
+                          {onNavigate && (
+                            <button
+                              className="icon-button table-row-action"
+                              onClick={() => onNavigate('workload')}
+                              title="Buka Analisis Beban Guru ini"
+                              style={{ color: '#2f7771' }}
+                            >
+                              <TrendingUp size={15} />
+                            </button>
+                          )}
+                          <button
+                            className="icon-button table-row-action edit-action"
+                            onClick={() => onEditTeacher(t)}
+                            title="Edit data guru"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                          <button
+                            className="icon-button table-row-action"
+                            onClick={() => onDelete('teachers', t.id)}
+                            title="Hapus guru"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -2641,6 +2794,29 @@ function RequirementsScreen({
 
   return (
     <>
+      {/* Consolidated Academic Hub Switcher */}
+      {_onNavigate && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+          <button
+            className="button button-secondary"
+            onClick={() => _onNavigate('master')}
+            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
+          >
+            Data Master (Kelas, Guru, Mapel)
+          </button>
+          <button className="button button-primary" style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}>
+            Alokasi Kebutuhan JP
+          </button>
+          <button
+            className="button button-secondary"
+            onClick={() => _onNavigate('workload')}
+            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
+          >
+            Analisis Beban Guru
+          </button>
+        </div>
+      )}
+
       <PageHeading
         kicker="CURRICULUM PLANNING"
         title="Kebutuhan &amp; Alokasi JP"
@@ -2693,9 +2869,22 @@ function RequirementsScreen({
               <label>Guru Pengampu</label>
               <select required value={form.teacherId} onChange={(e) => setForm({ ...form, teacherId: e.target.value })}>
                 <option value="">Pilih guru</option>
-                {state.teachers.filter((t) => t.isActive && t.subjectIds.includes(form.subjectId)).map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
+                {state.teachers.filter((t) => t.isActive && form.subjectId && t.subjectIds.includes(form.subjectId)).length > 0 && (
+                  <optgroup label="Guru Sesuai Kualifikasi Mapel">
+                    {state.teachers
+                      .filter((t) => t.isActive && form.subjectId && t.subjectIds.includes(form.subjectId))
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.code})</option>
+                      ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Guru Terdaftar Lainnya (Lintas Mapel)">
+                  {state.teachers
+                    .filter((t) => !form.subjectId || !t.subjectIds.includes(form.subjectId))
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.code})</option>
+                    ))}
+                </optgroup>
               </select>
             </div>
             <div className="field-group">

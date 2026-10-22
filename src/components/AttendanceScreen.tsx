@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { AppState, AttendanceRecord, AttendanceStatus, Holiday } from '../domain/types';
 import { exportAttendanceRecapPDF } from '../utils/pdfExport';
+import { InfoNotice } from './InfoNotice';
 
 interface AttendanceScreenProps {
   state: AppState;
@@ -300,11 +301,10 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
             <span className="eyebrow-line" />
             MODUL PRESENSI & KEHADIRAN
           </div>
-          <h1>Presensi & Absensi Guru</h1>
-          <p>
-            Kelola pencatatan kehadiran harian, massal bulanan, rekapitulasi kehadiran dengan persentase otomatis,
-            ekspor PDF resmi, dan jadwal hari libur madrasah.
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <h1 style={{ margin: 0 }}>Presensi & Absensi Guru</h1>
+            <InfoNotice text="Kelola pencatatan kehadiran harian, massal bulanan, rekapitulasi kehadiran dengan persentase otomatis, ekspor PDF resmi, dan jadwal hari libur madrasah." />
+          </div>
         </div>
       </div>
 

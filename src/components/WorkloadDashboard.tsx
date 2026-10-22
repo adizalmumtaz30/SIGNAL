@@ -17,14 +17,21 @@ import {
 import type { AppState, Day } from '../domain/types';
 import { jpToAstronomical } from '../domain/time';
 import { exportScheduleTeacherPDF } from '../utils/pdfExport';
+import { InfoNotice } from './InfoNotice';
 
 interface WorkloadDashboardProps {
   state: AppState;
   onNavigateToSchedule: () => void;
   onNavigateToMaster: () => void;
+  onNavigateToRequirements?: () => void;
 }
 
-export function WorkloadDashboard({ state, onNavigateToSchedule, onNavigateToMaster }: WorkloadDashboardProps) {
+export function WorkloadDashboard({
+  state,
+  onNavigateToSchedule,
+  onNavigateToMaster,
+  onNavigateToRequirements,
+}: WorkloadDashboardProps) {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('all');
   const [selectedClassId, setSelectedClassId] = useState<string>('all');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
@@ -139,6 +146,29 @@ export function WorkloadDashboard({ state, onNavigateToSchedule, onNavigateToMas
 
   return (
     <div className="workload-dashboard-page">
+      {/* Consolidated Academic Hub Switcher */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+        <button
+          className="button button-secondary"
+          onClick={onNavigateToMaster}
+          style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
+        >
+          Data Master (Kelas, Guru, Mapel)
+        </button>
+        {onNavigateToRequirements && (
+          <button
+            className="button button-secondary"
+            onClick={onNavigateToRequirements}
+            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
+          >
+            Alokasi Kebutuhan JP
+          </button>
+        )}
+        <button className="button button-primary" style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}>
+          Analisis Beban Guru
+        </button>
+      </div>
+
       {/* Top Banner / Hero */}
       <div className="workload-hero">
         <div className="workload-hero-copy">
@@ -146,11 +176,10 @@ export function WorkloadDashboard({ state, onNavigateToSchedule, onNavigateToMas
             <span className="eyebrow-line" />
             ANALISIS BEBAN MENGAJAR
           </div>
-          <h2>Statistik & Distribusi Beban Guru</h2>
-          <p>
-            Pantau jam mengajar per minggu, perbandingan jam pelajaran (JP) dengan jam astronomis riil,
-            jumlah sesi belajar, dan distribusi harian secara transparan.
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <h2 style={{ margin: 0 }}>Statistik & Distribusi Beban Guru</h2>
+            <InfoNotice text="Pantau jam mengajar per minggu, perbandingan jam pelajaran (JP) dengan jam astronomis riil, jumlah sesi belajar, dan distribusi harian secara transparan." />
+          </div>
         </div>
         <div className="workload-hero-badges">
           <div className="stat-pill">
