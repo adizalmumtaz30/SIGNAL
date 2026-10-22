@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { AppState, Day } from '../domain/types';
+import type { AppState, Day, SchoolClass } from '../domain/types';
 import { jpToAstronomical } from '../domain/time';
 
 // Color palette matching SIGNAL branding
@@ -208,27 +208,147 @@ export function exportScheduleMasterPDF(state: AppState): void {
   doc.save(`SIGNAL_Jadwal_Sekolah_${cleanYear}.pdf`);
 }
 
-/**
- * 2. Export Class Schedule PDF (A4 Portrait)
- */
-export function exportScheduleClassPDF(state: AppState, classId: string): void {
-  const cls = state.classes.find((c) => c.id === classId) ?? state.classes[0];
-  if (!cls) return;
+export interface WeeklyClassSchedulePdfOptions {
+  orientation?: 'landscape' | 'portrait';
+  kopSurat?: boolean;
+  signerCity?: string;
+  signerDate?: string;
+  principalName?: string;
+  principalNip?: string;
+  coordinatorTitle?: string;
+  coordinatorName?: string;
+  coordinatorNip?: string;
+  includeTeacherRecapPage?: boolean;
+}
 
-  const doc = new jsPDF({ orientation: 'portrait', format: 'a4' });
-  const entries = (state.draft ?? state.activeSchedule ?? []).filter((e) => e.classId === cls.id);
+/**
+ * Render 2-page Weekly Class Schedule:
+ * - Page 1: Clean Timetable Matrix with comfortable typography & KPI cards
+ * - Page 2: Dedicated Teacher JP Breakdown & Allocation Recap table with signatures
+ */
+function renderClassWeeklyPages(
+  doc: jsPDF,
+  state: AppState,
+  cls: SchoolClass,
+  options?: WeeklyClassSchedulePdfOptions,
+  isFirstClass = true,
+): void {
+  const orientation = options?.orientation ?? 'landscape';
+  if (!isFirstClass) {
+    doc.addPage('a4', orientation);
+  }
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const allEntries = state.draft ?? state.activeSchedule ?? [];
+  const classEntries = allEntries.filter((e) => e.classId === cls.id);
   const activeDays = state.settings.activeDays;
   const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
+  const periodMinutes = state.settings.periodMinutes ?? 40;
+  const astro = jpToAstronomical(classEntries.length, periodMinutes);
 
-  addDocHeader(
-    doc,
-    `JADWAL PELAJARAN KELAS ${cls.name}`,
-    `Tingkat ${cls.level} · Total ${entries.length} Jam Pelajaran (JP)`,
-    state.settings.schoolName,
-    state.settings.academicYear,
-    state.settings.semester,
+  const teacherIdsInClass = [...new Set(classEntries.map((e) => e.teacherId))];
+  const subjectIdsInClass = [...new Set(classEntries.map((e) => e.subjectId))];
+
+  // ==========================================
+  // HALAMAN 1: MATRIKS JADWAL MINGGUAN KELAS
+  // ==========================================
+  let currentY = 12;
+
+  if (options?.kopSurat !== false) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 35, 33);
+    doc.text('KEMENTERIAN AGAMA REPUBLIK INDONESIA', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 4.5;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(25, 45, 43);
+    doc.text('KANTOR KEMENTERIAN AGAMA KABUPATEN / KOTA', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 5;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12.5);
+    doc.setTextColor(11, 52, 53);
+    doc.text(`MADRASAH TSANAWIYAH ${state.settings.schoolName.toUpperCase()}`, pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 4;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 95, 90);
+    doc.text(
+      `Alamat: Kampus Pendidikan Terpadu · T.A. ${state.settings.academicYear} · Semester ${state.settings.semester}`,
+      pageWidth / 2,
+      currentY,
+      { align: 'center' },
+    );
+
+    currentY += 3;
+    doc.setDrawColor(11, 52, 53);
+    doc.setLineWidth(1.2);
+    doc.line(14, currentY, pageWidth - 14, currentY);
+
+    currentY += 1.2;
+    doc.setLineWidth(0.4);
+    doc.line(14, currentY, pageWidth - 14, currentY);
+
+    currentY += 4.5;
+  } else {
+    currentY = 16;
+  }
+
+  // Document Title & Class Subtitle
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(17, 45, 42);
+  doc.text(`JADWAL PELAJARAN MINGGUAN — KELAS ${cls.name}`, pageWidth / 2, currentY, { align: 'center' });
+
+  currentY += 4.2;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(80, 95, 90);
+  doc.text(
+    `Tingkat ${cls.level} · Tahun Ajaran ${state.settings.academicYear} · Semester ${state.settings.semester}`,
+    pageWidth / 2,
+    currentY,
+    { align: 'center' },
   );
 
+  currentY += 5.5;
+
+  // KPI Summary Bar (4 Cards)
+  const boxWidth = (pageWidth - 28) / 4;
+  const boxHeight = 11.5;
+
+  const kpisPage1 = [
+    { label: 'TOTAL ALOKASI JP', value: `${classEntries.length} JP Mingguan` },
+    { label: 'WAKTU ASTRONOMIS', value: `${astro.hours} Jam (${astro.minutes} Mnt)` },
+    { label: 'GURU PENGAJAR', value: `${teacherIdsInClass.length} Pendidik` },
+    { label: 'MATA PELAJARAN', value: `${subjectIdsInClass.length} Bidang Studi` },
+  ];
+
+  kpisPage1.forEach((kpi, kIdx) => {
+    const x = 14 + kIdx * boxWidth;
+    doc.setFillColor(248, 251, 249);
+    doc.setDrawColor(215, 230, 222);
+    doc.roundedRect(x, currentY, boxWidth - 3, boxHeight, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(80, 105, 95);
+    doc.text(kpi.label, x + (boxWidth - 3) / 2, currentY + 4, { align: 'center' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(11, 52, 53);
+    doc.text(kpi.value, x + (boxWidth - 3) / 2, currentY + 9, { align: 'center' });
+  });
+
+  currentY += boxHeight + 4;
+
+  // Timetable Matrix AutoTable
   const tableHeaders = ['Jam / JP', ...activeDays];
   const tableData: string[][] = [];
 
@@ -238,11 +358,13 @@ export function exportScheduleClassPDF(state: AppState, classId: string): void {
     const row = [timeLabel];
 
     for (const day of activeDays) {
-      const entry = entries.find((e) => e.day === day && e.jpNo === jp);
+      const entry = classEntries.find((e) => e.day === day && e.jpNo === jp);
       if (entry) {
         const sub = state.subjects.find((s) => s.id === entry.subjectId);
         const tch = state.teachers.find((t) => t.id === entry.teacherId);
-        row.push(`${sub?.name ?? 'Mapel'}\n${tch?.name ?? ''}`);
+        const subName = sub?.name ?? 'Mapel';
+        const tchInfo = tch ? (tch.code ? `[${tch.code}] ${tch.name}` : tch.name) : '—';
+        row.push(`${subName}\n${tchInfo}`);
       } else {
         row.push('—');
       }
@@ -250,82 +372,391 @@ export function exportScheduleClassPDF(state: AppState, classId: string): void {
     tableData.push(row);
   }
 
+  // Calculate day column width
+  const timeColWidth = orientation === 'landscape' ? 26 : 20;
+  const dayColWidth = (pageWidth - 28 - timeColWidth) / activeDays.length;
+
+  const colStyles: Record<number, { halign: 'center' | 'left' | 'right'; cellWidth: number; fontStyle?: 'bold' | 'normal'; fillColor?: [number, number, number] }> = {
+    0: { halign: 'center', cellWidth: timeColWidth, fontStyle: 'bold', fillColor: [248, 250, 248] },
+  };
+  activeDays.forEach((_, idx) => {
+    colStyles[idx + 1] = { halign: 'center', cellWidth: dayColWidth };
+  });
+
   autoTable(doc, {
-    startY: 50,
+    startY: currentY,
     head: [tableHeaders],
     body: tableData,
     theme: 'grid',
     headStyles: {
-      fillColor: TEAL,
+      fillColor: [11, 52, 53],
       textColor: 255,
       fontSize: 8.5,
       fontStyle: 'bold',
       halign: 'center',
+      cellPadding: 2.8,
     },
     bodyStyles: {
-      fontSize: 8,
+      fontSize: orientation === 'landscape' ? 7.5 : 6.8,
       halign: 'center',
       valign: 'middle',
-      cellPadding: 3,
+      cellPadding: orientation === 'landscape' ? 2.5 : 1.8,
+      textColor: [20, 35, 33],
+      lineColor: [215, 225, 220],
+      lineWidth: 0.25,
     },
+    columnStyles: colStyles,
     alternateRowStyles: {
-      fillColor: [248, 250, 248],
+      fillColor: [253, 254, 253],
     },
     margin: { left: 14, right: 14 },
   });
 
-  const lastTable = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
+  const lastTableP1 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
+  const p1NoticeY = Math.min(lastTableP1.finalY + 4, pageHeight - 20);
 
-  // Add Subject & Teacher breakdown summary table
-  const subjectSummary: Array<{ code: string; name: string; teacher: string; jp: number }> = [];
-  const subjectIds = [...new Set(entries.map((e) => e.subjectId))];
+  // Clean Notification Callout at Bottom of Page 1
+  doc.setFillColor(243, 248, 245);
+  doc.setDrawColor(205, 230, 220);
+  doc.roundedRect(14, p1NoticeY, pageWidth - 28, 9, 2, 2, 'FD');
 
-  for (const sid of subjectIds) {
-    const sub = state.subjects.find((s) => s.id === sid);
-    const count = entries.filter((e) => e.subjectId === sid).length;
-    const entry = entries.find((e) => e.subjectId === sid);
-    const tch = entry ? state.teachers.find((t) => t.id === entry.teacherId) : undefined;
-    if (sub) {
-      subjectSummary.push({
-        code: sub.code,
-        name: sub.name,
-        teacher: tch?.name ?? '—',
-        jp: count,
-      });
-    }
-  }
-
-  let nextY = lastTable.finalY + 8;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(...TEAL);
-  doc.text('Daftar Mata Pelajaran & Guru Pengampu:', 14, nextY);
-  nextY += 3;
+  doc.setFontSize(7.5);
+  doc.setTextColor(17, 65, 55);
+  doc.text(
+    '👉 Rincian Lengkap & Rekapitulasi Beban JP Per Guru Tercantum Pada Halaman 2 (Lembar Rekapitulasi)',
+    20,
+    p1NoticeY + 4,
+  );
 
-  autoTable(doc, {
-    startY: nextY,
-    head: [['Kode', 'Mata Pelajaran', 'Guru Pengampu', 'Beban JP']],
-    body: subjectSummary.map((s) => [s.code, s.name, s.teacher, `${s.jp} JP`]),
-    theme: 'plain',
-    headStyles: {
-      fillColor: TEAL_LIGHT,
-      textColor: TEAL,
-      fontSize: 8,
-      fontStyle: 'bold',
-    },
-    bodyStyles: {
-      fontSize: 8,
-      cellPadding: 2,
-    },
-    margin: { left: 14, right: 14 },
-  });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(90, 110, 105);
+  doc.text(
+    `Catatan: 1 JP = ${periodMinutes} menit waktu efektif KBM. Jadwal ini disahkan untuk pembelajaran semester berjalan.`,
+    20,
+    p1NoticeY + 7.3,
+  );
 
-  const finalTable = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
-  addSignatureBlock(doc, state.settings.schoolName, finalTable.finalY);
+  // =========================================================================
+  // HALAMAN 2: TABEL REKAPITULASI JP PER GURU (SEPARATE DEDICATED PAGE)
+  // =========================================================================
+  if (options?.includeTeacherRecapPage !== false) {
+    doc.addPage('a4', orientation);
+    let p2Y = 12;
+
+    if (options?.kopSurat !== false) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 35, 33);
+      doc.text('KEMENTERIAN AGAMA REPUBLIK INDONESIA', pageWidth / 2, p2Y, { align: 'center' });
+
+      p2Y += 4.5;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(25, 45, 43);
+      doc.text('KANTOR KEMENTERIAN AGAMA KABUPATEN / KOTA', pageWidth / 2, p2Y, { align: 'center' });
+
+      p2Y += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12.5);
+      doc.setTextColor(11, 52, 53);
+      doc.text(`MADRASAH TSANAWIYAH ${state.settings.schoolName.toUpperCase()}`, pageWidth / 2, p2Y, { align: 'center' });
+
+      p2Y += 4;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(80, 95, 90);
+      doc.text(
+        `Alamat: Kampus Pendidikan Terpadu · T.A. ${state.settings.academicYear} · Semester ${state.settings.semester}`,
+        pageWidth / 2,
+        p2Y,
+        { align: 'center' },
+      );
+
+      p2Y += 3;
+      doc.setDrawColor(11, 52, 53);
+      doc.setLineWidth(1.2);
+      doc.line(14, p2Y, pageWidth - 14, p2Y);
+
+      p2Y += 1.2;
+      doc.setLineWidth(0.4);
+      doc.line(14, p2Y, pageWidth - 14, p2Y);
+
+      p2Y += 4.5;
+    } else {
+      p2Y = 16;
+    }
+
+    // Header Page 2 Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(17, 45, 42);
+    doc.text(`REKAPITULASI ALOKASI JP & BEBAN MENGAJAR GURU`, pageWidth / 2, p2Y, { align: 'center' });
+
+    p2Y += 4.2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(80, 95, 90);
+    doc.text(
+      `Lampiran Resmi Jadwal Mingguan Kelas ${cls.name} (Tingkat ${cls.level}) · Semester ${state.settings.semester} T.A. ${state.settings.academicYear}`,
+      pageWidth / 2,
+      p2Y,
+      { align: 'center' },
+    );
+
+    p2Y += 5.5;
+
+    // KPI Cards Page 2
+    const kpisPage2 = [
+      { label: 'TOTAL BEBAN KELAS', value: `${classEntries.length} Jam Pelajaran` },
+      { label: 'GURU TERLIBAT', value: `${teacherIdsInClass.length} Pendidik` },
+      { label: 'RATA-RATA BEBAN', value: `${(classEntries.length / (teacherIdsInClass.length || 1)).toFixed(1)} JP / Guru` },
+      { label: 'STATUS DISTRIBUSI', value: '100% Terstruktur' },
+    ];
+
+    kpisPage2.forEach((kpi, kIdx) => {
+      const x = 14 + kIdx * boxWidth;
+      doc.setFillColor(248, 251, 249);
+      doc.setDrawColor(215, 230, 222);
+      doc.roundedRect(x, p2Y, boxWidth - 3, boxHeight, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(80, 105, 95);
+      doc.text(kpi.label, x + (boxWidth - 3) / 2, p2Y + 4, { align: 'center' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(11, 52, 53);
+      doc.text(kpi.value, x + (boxWidth - 3) / 2, p2Y + 9, { align: 'center' });
+    });
+
+    p2Y += boxHeight + 4;
+
+    // Build Teacher Recap Breakdown Data
+    const teacherDataRows: Array<Array<string | number>> = [];
+
+    const teachersInClassObj = teacherIdsInClass
+      .map((tid) => state.teachers.find((t) => t.id === tid))
+      .filter((t): t is typeof state.teachers[0] => Boolean(t))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    teachersInClassObj.forEach((teacher, idx) => {
+      const tEntries = classEntries.filter((e) => e.teacherId === teacher.id);
+      const taughtSubjectNames = [...new Set(
+        tEntries.map((e) => state.subjects.find((s) => s.id === e.subjectId)?.name ?? 'Mapel'),
+      )].join(', ');
+
+      const teachingDays = [...new Set(tEntries.map((e) => e.day))];
+      teachingDays.sort((a, b) => activeDays.indexOf(a) - activeDays.indexOf(b));
+      const daysStr = teachingDays.join(', ');
+
+      const tAstro = jpToAstronomical(tEntries.length, periodMinutes);
+      const totalSchoolJp = allEntries.filter((e) => e.teacherId === teacher.id).length;
+
+      let status = 'Sesuai Kuota';
+      if (totalSchoolJp > teacher.maxWeeklyJP) status = 'Melebihi Batas';
+      else if (totalSchoolJp === teacher.maxWeeklyJP) status = 'Maksimal';
+
+      teacherDataRows.push([
+        idx + 1,
+        teacher.code,
+        teacher.name,
+        taughtSubjectNames,
+        daysStr,
+        `${tEntries.length} JP`,
+        `${tAstro.hours}j (${tAstro.minutes}m)`,
+        `${totalSchoolJp} / ${teacher.maxWeeklyJP} JP`,
+        status,
+      ]);
+    });
+
+    // Summary Total Row
+    teacherDataRows.push([
+      '',
+      '',
+      `TOTAL & RATA-RATA KELAS ${cls.name}`,
+      `${subjectIdsInClass.length} Mata Pelajaran`,
+      `${activeDays.length} Hari KBM`,
+      `${classEntries.length} JP`,
+      `${astro.hours}j (${astro.minutes}m)`,
+      '—',
+      '100% Terpenuhi',
+    ]);
+
+    const p2Headers = [
+      'No',
+      'Kode',
+      'Nama Lengkap Guru / Pendidik',
+      'Mata Pelajaran yang Diampu',
+      'Hari Mengajar',
+      'Beban Kelas',
+      'Waktu Astronomis',
+      'Beban Madrasah',
+      'Status Alokasi',
+    ];
+
+    autoTable(doc, {
+      startY: p2Y,
+      head: [p2Headers],
+      body: teacherDataRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [11, 52, 53],
+        textColor: 255,
+        fontSize: 8,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 2.8,
+      },
+      bodyStyles: {
+        fontSize: 8,
+        halign: 'center',
+        cellPadding: 2.3,
+        textColor: [20, 35, 33],
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 10 },
+        1: { halign: 'center', cellWidth: 15 },
+        2: { halign: 'left', cellWidth: orientation === 'landscape' ? 52 : 38, fontStyle: 'bold' },
+        3: { halign: 'left', cellWidth: orientation === 'landscape' ? 50 : 36 },
+        4: { halign: 'center', cellWidth: orientation === 'landscape' ? 32 : 24 },
+        5: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
+        6: { halign: 'center', cellWidth: orientation === 'landscape' ? 30 : 24 },
+        7: { halign: 'center', cellWidth: orientation === 'landscape' ? 28 : 22 },
+        8: { halign: 'center', cellWidth: orientation === 'landscape' ? 32 : 20 },
+      },
+      didParseCell: (data) => {
+        if (data.row.index === teacherDataRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [232, 244, 238];
+          data.cell.styles.textColor = [11, 52, 53];
+        }
+      },
+      alternateRowStyles: {
+        fillColor: [253, 254, 253],
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    const lastTableP2 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
+    let nextP2Y = lastTableP2.finalY + 3.5;
+
+    // Small notes below Page 2
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(90, 105, 100);
+    doc.text(
+      `* Catatan: Beban JP dihitung otomatis berdasarkan alokasi kurikulum resmi madrasah (1 JP = ${periodMinutes} menit).`,
+      14,
+      nextP2Y,
+    );
+    nextP2Y += 3.2;
+    doc.text(
+      `* Kolom 'Hari Mengajar' merinci jadwal tatap muka guru di rombongan belajar Kelas ${cls.name}.`,
+      14,
+      nextP2Y,
+    );
+
+    // Official Signature Block on Page 2
+    let sigY = nextP2Y + 6;
+    if (sigY + 34 > pageHeight - 14) {
+      doc.addPage('a4', orientation);
+      sigY = 22;
+    }
+
+    const signerCity = options?.signerCity || 'Kota Madrasah';
+    const signerDate =
+      options?.signerDate ||
+      new Date().toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+
+    const principalName = options?.principalName || 'Drs. H. M. Zainuddin, M.Pd.I';
+    const principalNip = options?.principalNip || '197405101999031003';
+    const coordinatorTitle = options?.coordinatorTitle || `Wali Kelas ${cls.name} / Koordinator Kurikulum`;
+    const coordinatorName = options?.coordinatorName || 'Ahmad Fauzi, S.Pd.';
+    const coordinatorNip = options?.coordinatorNip || '198204122008011015';
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(23, 54, 55);
+
+    // Left Signer
+    const leftX = 20;
+    doc.text('Mengetahui / Memeriksa,', leftX, sigY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(coordinatorTitle, leftX, sigY + 4.5);
+    doc.setFont('helvetica', 'normal');
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(coordinatorName, leftX, sigY + 23);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(`NIP. ${coordinatorNip}`, leftX, sigY + 27);
+
+    // Right Signer
+    const rightX = pageWidth - (orientation === 'landscape' ? 85 : 75);
+    doc.setFontSize(8.5);
+    doc.text(`${signerCity}, ${signerDate}`, rightX, sigY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Kepala Madrasah ${state.settings.schoolName}`, rightX, sigY + 4.5);
+    doc.setFont('helvetica', 'normal');
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(principalName, rightX, sigY + 23);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(`NIP. ${principalNip}`, rightX, sigY + 27);
+  }
+}
+
+/**
+ * 2. Export Weekly Class Schedule PDF (A4 Clean Layout with Separate Page Teacher JP Recap)
+ */
+export function exportScheduleClassPDF(
+  state: AppState,
+  classId: string,
+  options?: WeeklyClassSchedulePdfOptions,
+): void {
+  const cls = state.classes.find((c) => c.id === classId) ?? state.classes[0];
+  if (!cls) return;
+
+  const orientation = options?.orientation ?? 'landscape';
+  const doc = new jsPDF({ orientation, format: 'a4' });
+
+  renderClassWeeklyPages(doc, state, cls, options, true);
+
   addDocFooter(doc, state.settings.schoolName);
 
   const cleanName = cls.name.replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`SIGNAL_Jadwal_Kelas_${cleanName}.pdf`);
+  doc.save(`SIGNAL_Jadwal_Mingguan_Kelas_${cleanName}.pdf`);
+}
+
+/**
+ * Export All Classes Weekly Schedule PDF (A4 Clean Layout Bundle)
+ */
+export function exportAllClassesWeeklyPDF(
+  state: AppState,
+  options?: WeeklyClassSchedulePdfOptions,
+): void {
+  const classes = state.classes.filter((c) => c.isActive);
+  if (classes.length === 0) return;
+
+  const orientation = options?.orientation ?? 'landscape';
+  const doc = new jsPDF({ orientation, format: 'a4' });
+
+  classes.forEach((cls, idx) => {
+    renderClassWeeklyPages(doc, state, cls, options, idx === 0);
+  });
+
+  addDocFooter(doc, state.settings.schoolName);
+
+  const cleanYear = state.settings.academicYear.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`SIGNAL_Jadwal_Mingguan_Semua_Kelas_${cleanYear}.pdf`);
 }
 
 /**

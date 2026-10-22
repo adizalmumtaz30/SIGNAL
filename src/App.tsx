@@ -1472,7 +1472,7 @@ function ScheduleScreen({
               </Button>
             )}
             <Button variant="secondary" icon={Download} onClick={onOpenPdfModal}>
-              Ekspor PDF
+              Ekspor PDF (A4)
             </Button>
             <Button variant="secondary" icon={FileSpreadsheet} onClick={onExportCSV}>
               CSV
