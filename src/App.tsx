@@ -897,6 +897,7 @@ export default function App() {
             {screen === 'requirements' && (
               <RequirementsScreen
                 state={workspace}
+                masterIssues={masterIssues}
                 formOpen={reqFormOpen}
                 setFormOpen={setReqFormOpen}
                 form={reqForm}
@@ -2767,6 +2768,7 @@ function MasterScreen({
  */
 function RequirementsScreen({
   state,
+  masterIssues,
   formOpen,
   setFormOpen,
   form,
@@ -2779,6 +2781,7 @@ function RequirementsScreen({
   onOpenAddModal,
 }: {
   state: AppState;
+  masterIssues?: ValidationIssue[];
   formOpen: boolean;
   setFormOpen: (value: boolean) => void;
   form: typeof emptyRequirementForm;
@@ -2790,7 +2793,116 @@ function RequirementsScreen({
   onEdit?: (r: Requirement) => void;
   onOpenAddModal?: () => void;
 }) {
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
+  const [onlyIssuesFilter, setOnlyIssuesFilter] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [validationExpanded, setValidationExpanded] = useState<boolean>(true);
+
+  // 1. Calculate Total Weekly Slots per Class
+  const totalWeeklySlots = useMemo(() => {
+    return state.settings.activeDays.reduce(
+      (sum, day) => sum + teachingPeriodsForDay(state.slots, day).length,
+      0
+    );
+  }, [state.settings.activeDays, state.slots]);
+
   const totalJP = state.requirements.reduce((sum, item) => sum + item.requiredJP, 0);
+
+  // 2. Real-Time Class Capacity Metrics
+  const classCapacityStats = useMemo(() => {
+    return state.classes
+      .filter((c) => c.isActive)
+      .map((cls) => {
+        const classReqs = state.requirements.filter((r) => r.classId === cls.id);
+        const allocatedJP = classReqs.reduce((sum, r) => sum + r.requiredJP, 0);
+        const diff = allocatedJP - totalWeeklySlots;
+        const isExact = diff === 0;
+        const isOver = diff > 0;
+        const isUnder = diff < 0;
+        return {
+          cls,
+          allocatedJP,
+          diff,
+          isExact,
+          isOver,
+          isUnder,
+          reqCount: classReqs.length,
+        };
+      });
+  }, [state.classes, state.requirements, totalWeeklySlots]);
+
+  // 3. Real-Time Teacher Workload Metrics
+  const teacherWorkloadStats = useMemo(() => {
+    const map = new Map<string, { totalJP: number; maxJP: number; isOver: boolean; isFull: boolean; pct: number }>();
+    for (const t of state.teachers) {
+      const reqs = state.requirements.filter((r) => r.teacherId === t.id);
+      const teacherTotalJP = reqs.reduce((sum, r) => sum + r.requiredJP, 0);
+      const maxJP = t.maxWeeklyJP || 24;
+      map.set(t.id, {
+        totalJP: teacherTotalJP,
+        maxJP,
+        isOver: teacherTotalJP > maxJP,
+        isFull: teacherTotalJP === maxJP,
+        pct: Math.round((teacherTotalJP / maxJP) * 100),
+      });
+    }
+    return map;
+  }, [state.teachers, state.requirements]);
+
+  // 4. Real-Time Data Master Issues
+  const liveIssues = useMemo(() => {
+    return masterIssues ?? validateMasterData(state);
+  }, [masterIssues, state]);
+
+  const criticalIssues = useMemo(() => liveIssues.filter((i) => i.severity === 'error'), [liveIssues]);
+  const warningIssues = useMemo(() => liveIssues.filter((i) => i.severity === 'warning'), [liveIssues]);
+
+  // Filtered Requirements
+  const filteredRequirements = useMemo(() => {
+    return state.requirements.filter((r) => {
+      if (selectedClassFilter !== 'ALL' && r.classId !== selectedClassFilter) return false;
+
+      const tStat = teacherWorkloadStats.get(r.teacherId);
+      const cStat = classCapacityStats.find((c) => c.cls.id === r.classId);
+
+      if (onlyIssuesFilter) {
+        const hasIssue = tStat?.isOver || cStat?.isOver || cStat?.isUnder;
+        if (!hasIssue) return false;
+      }
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const clsName = getClass(state, r.classId)?.name.toLowerCase() ?? '';
+        const subName = getSubject(state, r.subjectId)?.name.toLowerCase() ?? '';
+        const tchName = getTeacher(state, r.teacherId)?.name.toLowerCase() ?? '';
+        if (!clsName.includes(q) && !subName.includes(q) && !tchName.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [state, selectedClassFilter, onlyIssuesFilter, searchQuery, teacherWorkloadStats, classCapacityStats]);
+
+  // Inline Form Simulation Calculations
+  const simTeacher = state.teachers.find((t) => t.id === form.teacherId);
+  const simClass = state.classes.find((c) => c.id === form.classId);
+  const simSubject = state.subjects.find((s) => s.id === form.subjectId);
+  const simJP = Number(form.requiredJP) || 0;
+
+  const currentTeacherJP = state.requirements
+    .filter((r) => r.teacherId === form.teacherId)
+    .reduce((sum, r) => sum + r.requiredJP, 0);
+  const nextTeacherJP = currentTeacherJP + simJP;
+  const simTeacherMax = simTeacher?.maxWeeklyJP || 24;
+  const isSimTeacherOver = nextTeacherJP > simTeacherMax;
+
+  const currentClassJP = state.requirements
+    .filter((r) => r.classId === form.classId)
+    .reduce((sum, r) => sum + r.requiredJP, 0);
+  const nextClassJP = currentClassJP + simJP;
+  const isSimClassOver = nextClassJP > totalWeeklySlots;
+  const isSimClassExact = nextClassJP === totalWeeklySlots;
+
+  const isFormTeacherQualified = simTeacher && form.subjectId ? simTeacher.subjectIds.includes(form.subjectId) : false;
 
   return (
     <>
@@ -2818,13 +2930,17 @@ function RequirementsScreen({
       )}
 
       <PageHeading
-        kicker="CURRICULUM PLANNING"
+        kicker="CURRICULUM PLANNING & MASTER VALIDATION"
         title="Kebutuhan &amp; Alokasi JP"
-        description={`Tetapkan alokasi jam pelajaran mingguan untuk tiap kelas (${totalJP} JP terdaftar) dan pasangkan dengan guru berkualifikasi.`}
+        description={`Tetapkan alokasi jam pelajaran mingguan untuk tiap kelas (${totalJP} JP terdaftar) dan pantau kepatuhan data master secara langsung.`}
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="secondary" icon={WandSparkles} onClick={onGenerate}>
-              Susun Jadwal
+            <Button
+              variant={criticalIssues.length > 0 ? 'secondary' : 'primary'}
+              icon={WandSparkles}
+              onClick={onGenerate}
+            >
+              Susun Jadwal Otomatis
             </Button>
             <Button
               icon={Plus}
@@ -2836,6 +2952,272 @@ function RequirementsScreen({
         }
       />
 
+      {/* 1. REAL-TIME DATA MASTER VALIDATION HUB */}
+      {liveIssues.length > 0 ? (
+        <div
+          style={{
+            background: criticalIssues.length > 0 ? '#fff8f7' : '#fffcf5',
+            border: `1.5px solid ${criticalIssues.length > 0 ? '#f5c6cb' : '#faebcc'}`,
+            borderRadius: '12px',
+            padding: '16px 18px',
+            marginBottom: '16px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  background: criticalIssues.length > 0 ? '#fde8e8' : '#fef3c7',
+                  color: criticalIssues.length > 0 ? '#c81e1e' : '#b45309',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <AlertTriangle size={18} />
+              </div>
+              <div>
+                <strong style={{ fontSize: '13.5px', color: '#173637', display: 'block' }}>
+                  Validasi Real-Time Data Master: {criticalIssues.length} Isu Kritis &amp; {warningIssues.length} Peringatan
+                </strong>
+                <span style={{ fontSize: '11px', color: '#556663' }}>
+                  Perubahan alokasi langsung divalidasi dengan aturan kapasitas kelas dan beban maksimum guru tanpa perlu berpindah layar.
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                className="button button-secondary"
+                onClick={() => setOnlyIssuesFilter(!onlyIssuesFilter)}
+                style={{
+                  fontSize: '11.5px',
+                  height: '32px',
+                  background: onlyIssuesFilter ? '#173637' : '#ffffff',
+                  color: onlyIssuesFilter ? '#ffffff' : '#173637',
+                }}
+              >
+                {onlyIssuesFilter ? 'Tampilkan Semua Alokasi' : 'Fokuskan Isu Alokasi'}
+              </button>
+              <button
+                className="icon-button"
+                onClick={() => setValidationExpanded(!validationExpanded)}
+                title={validationExpanded ? 'Sembunyikan rincian isu' : 'Tampilkan rincian isu'}
+                style={{ height: '32px', width: '32px' }}
+              >
+                <ChevronDown size={16} style={{ transform: validationExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+              </button>
+            </div>
+          </div>
+
+          {validationExpanded && (
+            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {liveIssues.slice(0, 5).map((issue) => {
+                const isError = issue.severity === 'error';
+                return (
+                  <div
+                    key={issue.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#ffffff',
+                      border: `1px solid ${isError ? '#f8d0c8' : '#faebcc'}`,
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      fontSize: '11.5px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: isError ? '#fde8e8' : '#fef3c7',
+                          color: isError ? '#9b1c1c' : '#92400e',
+                        }}
+                      >
+                        {isError ? 'KRITIS' : 'PERINGATAN'}
+                      </span>
+                      <strong style={{ color: '#173637' }}>{issue.title}:</strong>
+                      <span style={{ color: '#556663' }}>{issue.message}</span>
+                    </div>
+
+                    {/* Interactive Context Action */}
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {issue.code === 'DATA-TEACHER-LOAD-OVER' && (
+                        <button
+                          className="button button-quiet"
+                          style={{ fontSize: '10.5px', height: '26px' }}
+                          onClick={() => {
+                            const tch = state.teachers.find((t) => issue.message.includes(t.name));
+                            if (tch) setSearchQuery(tch.name);
+                          }}
+                        >
+                          Tinjau Alokasi Guru
+                        </button>
+                      )}
+                      {(issue.code === 'DATA-CLASS-DEMAND-CAPACITY' || issue.code === 'DATA-CLASS-NO-DEMAND') && (
+                        <button
+                          className="button button-quiet"
+                          style={{ fontSize: '10.5px', height: '26px' }}
+                          onClick={() => {
+                            const cls = state.classes.find((c) => issue.message.includes(c.name) || issue.title.includes(c.name));
+                            if (cls) setSelectedClassFilter(cls.id);
+                          }}
+                        >
+                          Fokuskan Kelas
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div
+          style={{
+            background: '#eef8f2',
+            border: '1.5px solid #b7e3ca',
+            borderRadius: '12px',
+            padding: '12px 18px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#d1fae5', color: '#065f46', display: 'grid', placeItems: 'center' }}>
+              <CheckCircle2 size={18} />
+            </div>
+            <div>
+              <strong style={{ fontSize: '13px', color: '#065f46', display: 'block' }}>
+                Data Master &amp; Alokasi 100% Selaras
+              </strong>
+              <span style={{ fontSize: '11px', color: '#16483f' }}>
+                Semua {classCapacityStats.length} kelas aktif telah memenuhi kapasitas {totalWeeklySlots} JP/minggu dan tidak ada guru yang melebihi batas beban.
+              </span>
+            </div>
+          </div>
+          <button
+            className="button button-primary"
+            onClick={onGenerate}
+            style={{ fontSize: '11.5px', height: '32px' }}
+          >
+            <WandSparkles size={14} /> Buat Jadwal Sekarang
+          </button>
+        </div>
+      )}
+
+      {/* 2. REAL-TIME CLASS CAPACITY & DEMAND TRACKER (INTERACTIVE CHIPS) */}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 800, color: '#31544d', letterSpacing: '0.06em' }}>
+            MONITOR KAPASITAS KELAS ({totalWeeklySlots} JP/MINGGU PER KELAS)
+          </span>
+          {selectedClassFilter !== 'ALL' && (
+            <button
+              onClick={() => setSelectedClassFilter('ALL')}
+              style={{ border: 0, background: 'none', color: '#24635e', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              ✕ Tampilkan Semua Kelas
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+          <button
+            onClick={() => setSelectedClassFilter('ALL')}
+            style={{
+              padding: '10px 12px',
+              borderRadius: '10px',
+              border: `1.5px solid ${selectedClassFilter === 'ALL' ? '#24635e' : '#e0e7e3'}`,
+              background: selectedClassFilter === 'ALL' ? '#eaf4ee' : '#fffdf8',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '12.5px', color: '#173637' }}>Semua Kelas</strong>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#556663' }}>{state.requirements.length} Mapel</span>
+            </div>
+            <span style={{ fontSize: '11px', color: '#556663' }}>
+              Total {totalJP} JP dialokasikan
+            </span>
+          </button>
+
+          {classCapacityStats.map((c) => {
+            const isSelected = selectedClassFilter === c.cls.id;
+            const statusColor = c.isOver ? '#b24c3d' : c.isExact ? '#1f6952' : '#9c6f28';
+            const statusBg = c.isOver ? '#fdf0ee' : c.isExact ? '#e8f5ee' : '#fbf4e8';
+
+            return (
+              <button
+                key={c.cls.id}
+                onClick={() => setSelectedClassFilter(isSelected ? 'ALL' : c.cls.id)}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: `1.5px solid ${isSelected ? statusColor : '#e0e7e3'}`,
+                  background: isSelected ? statusBg : '#fffdf8',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.04)' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '12.5px', color: '#173637' }}>Kelas {c.cls.name}</strong>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      padding: '2px 5px',
+                      borderRadius: '4px',
+                      background: statusBg,
+                      color: statusColor,
+                    }}
+                  >
+                    {c.isExact ? '100% Pas' : c.isOver ? `+${c.diff} JP` : `${c.diff} JP`}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#4b6660' }}>
+                  <span>Alokasi:</span>
+                  <strong style={{ color: statusColor }}>{c.allocatedJP} / {totalWeeklySlots} JP</strong>
+                </div>
+
+                <div style={{ width: '100%', height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${Math.min(100, (c.allocatedJP / (totalWeeklySlots || 1)) * 100)}%`,
+                      height: '100%',
+                      background: statusColor,
+                    }}
+                  />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. INLINE FORM WITH REAL-TIME SIMULATION */}
       {formOpen && (
         <Card eyebrow="NEW ALLOCATION" title="Tambah Alokasi JP">
           <form className="requirement-form-grid" onSubmit={onSave}>
@@ -2861,7 +3243,7 @@ function RequirementsScreen({
               >
                 <option value="">Pilih mapel</option>
                 {state.subjects.filter((s) => s.isActive).map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                  <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                 ))}
               </select>
             </div>
@@ -2895,54 +3277,212 @@ function RequirementsScreen({
               <Button type="submit" icon={Save}>Simpan Alokasi</Button>
             </div>
           </form>
+
+          {/* Real-Time Live Form Simulation Card */}
+          {form.classId && form.teacherId && (
+            <div
+              style={{
+                marginTop: '14px',
+                padding: '12px 14px',
+                background: '#f4f8f5',
+                borderRadius: '9px',
+                border: '1px solid #c9ded2',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                gap: '12px',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
+                  <span style={{ color: '#274b43' }}>Simulasi Kapasitas Kelas {simClass?.name}:</span>
+                  <strong style={{ color: isSimClassOver ? '#b24c3d' : isSimClassExact ? '#1f6952' : '#173637' }}>
+                    {nextClassJP} / {totalWeeklySlots} JP
+                  </strong>
+                </div>
+                <div style={{ height: '5px', background: '#e0e7e3', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${Math.min(100, (nextClassJP / (totalWeeklySlots || 1)) * 100)}%`,
+                      height: '100%',
+                      background: isSimClassOver ? '#b24c3d' : isSimClassExact ? '#1f6952' : '#2563eb',
+                    }}
+                  />
+                </div>
+                <small style={{ color: isSimClassOver ? '#b24c3d' : '#556663', marginTop: '3px', display: 'block' }}>
+                  {isSimClassOver
+                    ? `⚠️ Alokasi melebihi kapasitas kelas (${nextClassJP - totalWeeklySlots} JP kelebihan)`
+                    : isSimClassExact
+                    ? '✓ Tepat memenuhi kapasitas mingguan'
+                    : `Sisa ${totalWeeklySlots - nextClassJP} slot JP`}
+                </small>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
+                  <span style={{ color: '#274b43' }}>Simulasi Beban Guru {simTeacher?.name}:</span>
+                  <strong style={{ color: isSimTeacherOver ? '#b24c3d' : '#173637' }}>
+                    {nextTeacherJP} / {simTeacherMax} JP
+                  </strong>
+                </div>
+                <div style={{ height: '5px', background: '#e0e7e3', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${Math.min(100, (nextTeacherJP / (simTeacherMax || 1)) * 100)}%`,
+                      height: '100%',
+                      background: isSimTeacherOver ? '#b24c3d' : nextTeacherJP === simTeacherMax ? '#1f6952' : '#2563eb',
+                    }}
+                  />
+                </div>
+                <small style={{ color: isSimTeacherOver ? '#b24c3d' : '#556663', marginTop: '3px', display: 'block' }}>
+                  {isSimTeacherOver
+                    ? `⚠️ Beban guru melebihi batas maksimum (+${nextTeacherJP - simTeacherMax} JP)`
+                    : `${Math.round((nextTeacherJP / simTeacherMax) * 100)}% dari batas maksimum guru`}
+                </small>
+              </div>
+
+              {!isFormTeacherQualified && simSubject && (
+                <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#16483f' }}>
+                  ℹ Guru {simTeacher?.name} belum memiliki kualifikasi {simSubject.name}; sistem akan otomatis menyinkronkannya ke Data Master saat disimpan.
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
-      <div className="data-table-wrap" style={{ marginTop: '16px' }}>
+      {/* 4. TOOLBAR & FILTER CONTROLS */}
+      <div className="toolbar-card" style={{ marginTop: '16px', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '200px' }}>
+          <Search size={15} style={{ color: '#556663' }} />
+          <input
+            type="text"
+            placeholder="Cari kelas, mapel, atau guru..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ border: 0, outline: 'none', background: 'transparent', width: '100%', fontSize: '12.5px' }}
+          />
+          {searchQuery && (
+            <button className="icon-button" onClick={() => setSearchQuery('')} style={{ height: '24px', width: '24px' }}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        <div className="toolbar-divider" />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '11px', color: '#556663', fontWeight: 700 }}>
+            Menampilkan {filteredRequirements.length} dari {state.requirements.length} Alokasi
+          </span>
+          {onlyIssuesFilter && (
+            <span style={{ fontSize: '10.5px', background: '#fdf0ee', color: '#b24c3d', padding: '2px 7px', borderRadius: '4px', fontWeight: 700 }}>
+              Filter Isu Aktif
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 5. REQUIREMENTS TABLE WITH LIVE DATA MASTER STATUS */}
+      <div className="data-table-wrap">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Kelas</th>
+              <th>Kelas &amp; Kapasitas</th>
               <th>Mata Pelajaran</th>
-              <th>Guru Pengampu</th>
+              <th>Guru Pengampu &amp; Status Beban</th>
               <th>Alokasi JP</th>
               <th style={{ textAlign: 'right' }}>Aksi</th>
             </tr>
           </thead>
           <tbody>
-            {state.requirements.map((r) => {
-              const cls = getClass(state, r.classId);
-              const sub = getSubject(state, r.subjectId);
-              const tch = getTeacher(state, r.teacherId);
+            {!filteredRequirements.length ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '32px 16px', color: '#7a8a86' }}>
+                  Tidak ada data alokasi yang sesuai dengan filter yang dipilih.
+                </td>
+              </tr>
+            ) : (
+              filteredRequirements.map((r) => {
+                const cls = getClass(state, r.classId);
+                const sub = getSubject(state, r.subjectId);
+                const tch = getTeacher(state, r.teacherId);
+                const tStat = tch ? teacherWorkloadStats.get(tch.id) : undefined;
+                const cStat = classCapacityStats.find((c) => c.cls.id === r.classId);
+                const isTchOver = tStat?.isOver ?? false;
+                const isClsOver = cStat?.isOver ?? false;
+                const isClsUnder = cStat?.isUnder ?? false;
 
-              return (
-                <tr key={r.id}>
-                  <td><strong>Kelas {cls?.name}</strong></td>
-                  <td>
-                    <span className="subject-color-swatch" style={{ background: sub?.color, marginRight: '6px' }} />
-                    {sub?.name}
-                  </td>
-                  <td>{tch?.name}</td>
-                  <td><strong>{r.requiredJP} JP</strong></td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div className="table-row-actions-group">
-                      {onEdit && (
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <strong>Kelas {cls?.name}</strong>
+                        <span style={{ fontSize: '11px', color: isClsOver ? '#b24c3d' : isClsUnder ? '#9c6f28' : '#1f6952', fontWeight: 600 }}>
+                          {cStat?.allocatedJP ?? 0} / {totalWeeklySlots} JP
+                          {isClsOver && ' (Kelebihan)'}
+                          {isClsUnder && ` (Kurang ${Math.abs(cStat?.diff ?? 0)} JP)`}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                        <span className="subject-color-swatch" style={{ background: sub?.color, width: '6px', height: '24px', borderRadius: '3px' }} />
+                        <div>
+                          <strong style={{ fontSize: '13px' }}>{sub?.name}</strong>
+                          <span style={{ fontSize: '10.5px', color: '#6b7280', display: 'block' }}>Kode: {sub?.code}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        <strong style={{ fontSize: '13px' }}>{tch?.name}</strong>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span
+                            style={{
+                              fontSize: '10.5px',
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: isTchOver ? '#fdf0ee' : tStat?.isFull ? '#e8f5ee' : '#f0f4f8',
+                              color: isTchOver ? '#b24c3d' : tStat?.isFull ? '#1f6952' : '#2563eb',
+                            }}
+                          >
+                            Beban: {tStat?.totalJP ?? 0} / {tStat?.maxJP ?? 24} JP
+                            {isTchOver && ` ⚠️ Overload (+${(tStat?.totalJP ?? 0) - (tStat?.maxJP ?? 24)} JP)`}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                        <strong style={{ fontSize: '14px', color: '#173637' }}>{r.requiredJP}</strong>
+                        <span style={{ fontSize: '11px', color: '#556663' }}>JP/minggu</span>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="table-row-actions-group">
+                        {onEdit && (
+                          <button
+                            className="icon-button table-row-action edit-action"
+                            onClick={() => onEdit(r)}
+                            title="Edit alokasi kebutuhan"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                        )}
                         <button
-                          className="icon-button table-row-action edit-action"
-                          onClick={() => onEdit(r)}
-                          title="Edit alokasi kebutuhan"
+                          className="icon-button table-row-action"
+                          onClick={() => onDelete(r)}
+                          title="Hapus alokasi"
                         >
-                          <Edit2 size={14} />
+                          <Trash2 size={14} />
                         </button>
-                      )}
-                      <button className="icon-button table-row-action" onClick={() => onDelete(r)} title="Hapus alokasi">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

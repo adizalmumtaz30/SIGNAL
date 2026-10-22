@@ -7,6 +7,9 @@ import {
   BookOpen,
   CalendarCheck,
   Check,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
 } from 'lucide-react';
 import type {
   AppState,
@@ -15,6 +18,7 @@ import type {
   Subject,
   Requirement,
 } from '../domain/types';
+import { teachingPeriodsForDay } from '../domain/time';
 
 export type EntityKind = 'class' | 'teacher' | 'subject' | 'requirement';
 
@@ -636,6 +640,127 @@ export function EntityEditModal({
                   Jumlah JP mingguan yang akan dialokasikan oleh generator ke kelas ini.
                 </small>
               </div>
+
+              {/* Real-Time Data Master Validation Preview */}
+              {(() => {
+                const selectedTeacher = state.teachers.find((t) => t.id === reqTeacherId);
+                const selectedClass = state.classes.find((c) => c.id === reqClassId);
+                const selectedSubject = state.subjects.find((s) => s.id === reqSubjectId);
+                const isQualified = selectedTeacher && reqSubjectId ? selectedTeacher.subjectIds.includes(reqSubjectId) : false;
+
+                const currentReqId = target.item ? (target.item as Requirement).id : null;
+                const otherTeacherJP = state.requirements
+                  .filter((r) => r.teacherId === reqTeacherId && r.id !== currentReqId)
+                  .reduce((sum, r) => sum + r.requiredJP, 0);
+
+                const otherClassJP = state.requirements
+                  .filter((r) => r.classId === reqClassId && r.id !== currentReqId)
+                  .reduce((sum, r) => sum + r.requiredJP, 0);
+
+                const newJP = Number(reqJP) || 0;
+                const totalTeacherJP = otherTeacherJP + newJP;
+                const teacherMaxJP = selectedTeacher?.maxWeeklyJP || 24;
+                const isTeacherOver = totalTeacherJP > teacherMaxJP;
+
+                const totalWeeklySlots = state.settings.activeDays.reduce(
+                  (sum, day) => sum + teachingPeriodsForDay(state.slots, day).length,
+                  0
+                );
+                const totalClassJP = otherClassJP + newJP;
+                const isClassOver = totalClassJP > totalWeeklySlots;
+                const isClassExact = totalClassJP === totalWeeklySlots;
+
+                if (!selectedClass || !selectedSubject || !selectedTeacher) return null;
+
+                return (
+                  <div
+                    style={{
+                      background: '#f6f9f7',
+                      border: '1px solid #d4e2da',
+                      borderRadius: '10px',
+                      padding: '12px 14px',
+                      marginTop: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#16483f', letterSpacing: '0.04em' }}>
+                        VALIDASI REAL-TIME DATA MASTER
+                      </span>
+                      {isTeacherOver || isClassOver ? (
+                        <span style={{ fontSize: '11px', color: '#b24c3d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <AlertTriangle size={13} /> Berpotensi Melanggar Aturan
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#1f6952', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle2 size={13} /> Sesuai Kapasitas & Beban
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      {/* Class Capacity Simulation */}
+                      <div style={{ background: '#fff', border: `1px solid ${isClassOver ? '#f8d0c8' : '#e0e7e3'}`, borderRadius: '8px', padding: '8px 10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
+                          <span style={{ color: '#435e58' }}>Kapasitas Kelas {selectedClass.name}:</span>
+                          <strong style={{ color: isClassOver ? '#b24c3d' : isClassExact ? '#1f6952' : '#173637' }}>
+                            {totalClassJP} / {totalWeeklySlots} JP
+                          </strong>
+                        </div>
+                        <div style={{ height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: `${Math.min(100, (totalClassJP / (totalWeeklySlots || 1)) * 100)}%`,
+                              height: '100%',
+                              background: isClassOver ? '#b24c3d' : isClassExact ? '#1f6952' : '#37776b',
+                            }}
+                          />
+                        </div>
+                        <span style={{ fontSize: '10px', color: isClassOver ? '#b24c3d' : isClassExact ? '#1f6952' : '#6b7280', marginTop: '3px', display: 'block' }}>
+                          {isClassOver
+                            ? `Kelebihan ${totalClassJP - totalWeeklySlots} JP dari slot mingguan`
+                            : isClassExact
+                            ? 'Pas 100% mengisi kapasitas mingguan'
+                            : `Masih ada sisa ${totalWeeklySlots - totalClassJP} slot JP`}
+                        </span>
+                      </div>
+
+                      {/* Teacher Load Simulation */}
+                      <div style={{ background: '#fff', border: `1px solid ${isTeacherOver ? '#f8d0c8' : '#e0e7e3'}`, borderRadius: '8px', padding: '8px 10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
+                          <span style={{ color: '#435e58' }}>Beban Guru {selectedTeacher.code}:</span>
+                          <strong style={{ color: isTeacherOver ? '#b24c3d' : '#173637' }}>
+                            {totalTeacherJP} / {teacherMaxJP} JP
+                          </strong>
+                        </div>
+                        <div style={{ height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: `${Math.min(100, (totalTeacherJP / (teacherMaxJP || 1)) * 100)}%`,
+                              height: '100%',
+                              background: isTeacherOver ? '#b24c3d' : totalTeacherJP === teacherMaxJP ? '#1f6952' : '#2563eb',
+                            }}
+                          />
+                        </div>
+                        <span style={{ fontSize: '10px', color: isTeacherOver ? '#b24c3d' : '#6b7280', marginTop: '3px', display: 'block' }}>
+                          {isTeacherOver
+                            ? `Kelebihan beban ${totalTeacherJP - teacherMaxJP} JP dari batas maksimum`
+                            : `${Math.round((totalTeacherJP / teacherMaxJP) * 100)}% dari batas maksimum guru`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {!isQualified && (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px', color: '#16483f', background: '#eaf4ee', padding: '6px 10px', borderRadius: '6px' }}>
+                        <Info size={14} style={{ color: '#24635e', flexShrink: 0 }} />
+                        <span>Kualifikasi mapel <strong>{selectedSubject.name}</strong> akan otomatis ditambahkan ke profil {selectedTeacher.name} di Data Master saat disimpan.</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
