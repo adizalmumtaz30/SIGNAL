@@ -15,7 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { AppState, AttendanceRecord, AttendanceStatus, Holiday } from '../domain/types';
-import { exportAttendanceRecapPDF } from '../utils/pdfExport';
+import { AttendancePdfExportModal } from './AttendancePdfExportModal';
 import { InfoNotice } from './InfoNotice';
 
 interface AttendanceScreenProps {
@@ -52,6 +52,7 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
   const [recapSelectedTeachers, setRecapSelectedTeachers] = useState<string[]>(() =>
     state.teachers.filter((t) => t.isActive).map((t) => t.id),
   );
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   // Daily Mass Entry Working State
   const [dailyEntries, setDailyEntries] = useState<Record<string, { status: AttendanceStatus; notes: string }>>({});
@@ -305,6 +306,11 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
             <h1 style={{ margin: 0 }}>Presensi & Absensi Guru</h1>
             <InfoNotice text="Kelola pencatatan kehadiran harian, massal bulanan, rekapitulasi kehadiran dengan persentase otomatis, ekspor PDF resmi, dan jadwal hari libur madrasah." />
           </div>
+        </div>
+        <div className="page-actions">
+          <button className="button button-primary" onClick={() => setPdfModalOpen(true)}>
+            <Download size={15} /> Ekspor PDF Rekap Bulanan (A4)
+          </button>
         </div>
       </div>
 
@@ -733,10 +739,9 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 className="button button-primary"
-                onClick={() => exportAttendanceRecapPDF(state, currentMonth, recapSelectedTeachers)}
-                disabled={recapSelectedTeachers.length === 0}
+                onClick={() => setPdfModalOpen(true)}
               >
-                <Download size={15} /> Ekspor PDF Rekap Bulanan
+                <Download size={15} /> Ekspor PDF Rekap Bulanan (A4)
               </button>
             </div>
           </div>
@@ -1018,6 +1023,14 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
           </div>
         </div>
       )}
+      {/* Formal A4 Attendance PDF Export Modal */}
+      <AttendancePdfExportModal
+        state={state}
+        isOpen={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        onNotify={onNotify}
+        initialMonth={currentMonth}
+      />
     </div>
   );
 }

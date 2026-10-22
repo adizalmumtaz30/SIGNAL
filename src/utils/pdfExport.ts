@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { AppState } from '../domain/types';
+import type { AppState, Day } from '../domain/types';
 import { jpToAstronomical } from '../domain/time';
 
 // Color palette matching SIGNAL branding
@@ -447,44 +447,166 @@ export function exportScheduleTeacherPDF(state: AppState, teacherId: string): vo
   doc.save(`SIGNAL_Jadwal_Guru_${cleanName}.pdf`);
 }
 
+export interface AttendanceRecapPdfOptions {
+  orientation?: 'landscape' | 'portrait';
+  kopSurat?: boolean;
+  signerCity?: string;
+  signerDate?: string;
+  principalName?: string;
+  principalNip?: string;
+  officerTitle?: string;
+  officerName?: string;
+  officerNip?: string;
+}
+
 /**
- * 4. Export Monthly Teacher Attendance Recap PDF (A4 Landscape)
+ * Helper to compute official effective school days in a given month.
+ * Excludes Sundays, inactive school days according to settings, and official holidays.
+ */
+function computeEffectiveSchoolDaysInMonth(
+  state: AppState,
+  year: number,
+  month: number, // 1-12
+): number {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const activeDays = state.settings.activeDays;
+  const holidays = state.holidays ?? [];
+
+  const dayMap: Record<number, Day> = {
+    0: 'Minggu' as Day,
+    1: 'Senin',
+    2: 'Selasa',
+    3: 'Rabu',
+    4: 'Kamis',
+    5: 'Jumat',
+    6: 'Sabtu',
+  };
+
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const curDate = new Date(year, month - 1, d);
+    const dayOfWeek = dayMap[curDate.getDay()];
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const isHoliday = holidays.some((h) => h.date === dateStr);
+
+    if (dayOfWeek !== ('Minggu' as Day) && activeDays.includes(dayOfWeek) && !isHoliday) {
+      count++;
+    }
+  }
+  return count > 0 ? count : 24;
+}
+
+/**
+ * 4. Export Monthly Teacher Attendance Recap PDF (Formal A4 Layout with Auto Percentage)
  */
 export function exportAttendanceRecapPDF(
   state: AppState,
   monthYear: string, // e.g. "2026-10"
   selectedTeacherIds: string[],
+  options?: AttendanceRecapPdfOptions,
 ): void {
-  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
+  const orientation = options?.orientation ?? 'landscape';
+  const doc = new jsPDF({ orientation, format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
   const allTeachers = state.teachers.filter((t) => t.isActive && selectedTeacherIds.includes(t.id));
   const attendanceList = state.attendance ?? [];
 
-  // Parse Month
+  // Parse Month and Year
   const [yearStr, monthStr] = monthYear.split('-');
-  const dateObj = new Date(Number(yearStr), Number(monthStr) - 1, 1);
+  const yearNum = Number(yearStr);
+  const monthNum = Number(monthStr);
+  const dateObj = new Date(yearNum, monthNum - 1, 1);
   const monthName = dateObj.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 
-  addDocHeader(
-    doc,
-    `REKAPITULASI PRESENSI GURU · BULAN ${monthName.toUpperCase()}`,
-    `Daftar kehadiran, izin, sakit, alpa, dan dinas luar untuk ${allTeachers.length} guru yang dipilih`,
-    state.settings.schoolName,
-    state.settings.academicYear,
-    state.settings.semester,
+  // Calculate official effective days (HE) for this month
+  const effectiveSchoolDays = computeEffectiveSchoolDaysInMonth(state, yearNum, monthNum);
+
+  let currentY = 14;
+
+  // 1. KOP SURAT RESMI MADRASAH (FORMAL LETTERHEAD)
+  if (options?.kopSurat !== false) {
+    // Instansi Pemerintah / Kementerian
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11.5);
+    doc.setTextColor(15, 35, 33);
+    doc.text('KEMENTERIAN AGAMA REPUBLIK INDONESIA', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 5;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(25, 45, 43);
+    doc.text('KANTOR KEMENTERIAN AGAMA KABUPATEN / KOTA', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 5.5;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(11, 52, 53); // Teal Signature
+    doc.text(`MADRASAH TSANAWIYAH ${state.settings.schoolName.toUpperCase()}`, pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 4.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 95, 90);
+    doc.text(
+      `Alamat: Kampus Pendidikan Madrasah Terpadu No. 01 · NPSN: 20580001 · NSM: 1212350001 · T.A. ${state.settings.academicYear}`,
+      pageWidth / 2,
+      currentY,
+      { align: 'center' },
+    );
+
+    currentY += 3.5;
+    // Official Double Line
+    doc.setDrawColor(11, 52, 53);
+    doc.setLineWidth(1.2);
+    doc.line(14, currentY, pageWidth - 14, currentY);
+
+    currentY += 1.2;
+    doc.setLineWidth(0.4);
+    doc.line(14, currentY, pageWidth - 14, currentY);
+
+    currentY += 5;
+  } else {
+    // Simple Banner Header if Kop Surat disabled
+    addDocHeader(
+      doc,
+      `REKAPITULASI PRESENSI GURU · BULAN ${monthName.toUpperCase()}`,
+      `Daftar kehadiran dan persentase kehadiran otomatis untuk ${allTeachers.length} guru terdaftar`,
+      state.settings.schoolName,
+      state.settings.academicYear,
+      state.settings.semester,
+    );
+    currentY = 48;
+  }
+
+  // 2. DOCUMENT TITLE & PERIODE
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(17, 45, 42);
+  doc.text('LAPORAN REKAPITULASI KEHADIRAN GURU BULANAN', pageWidth / 2, currentY, { align: 'center' });
+
+  currentY += 4.5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(80, 95, 90);
+  doc.text(
+    `Bulan: ${monthName.toUpperCase()} · Semester ${state.settings.semester.toUpperCase()} Tahun Ajaran ${state.settings.academicYear}`,
+    pageWidth / 2,
+    currentY,
+    { align: 'center' },
   );
 
-  const headers = [
-    'No',
-    'Kode',
-    'Nama Lengkap Guru',
-    'Hadir (H)',
-    'Sakit (S)',
-    'Izin (I)',
-    'Alpa (A)',
-    'Dinas Luar (DL)',
-    'Total Hari',
-    '% Kehadiran',
-  ];
+  currentY += 6;
+
+  // 3. STATISTICAL PERFORMANCE SUMMARY BAR (KPI BOX)
+  // Pre-calculate sums for the KPI summary
+  let sumHadirAll = 0;
+  let sumDinasAll = 0;
+  let sumSakitAll = 0;
+  let sumIzinAll = 0;
+  let sumAlpaAll = 0;
+  let totalPercentSum = 0;
 
   const tableData: Array<Array<string | number>> = [];
 
@@ -494,62 +616,233 @@ export function exportAttendanceRecapPDF(
     );
 
     const hadir = teacherRecords.filter((r) => r.status === 'HADIR').length;
+    const dinas = teacherRecords.filter((r) => r.status === 'DINAS_LUAR').length;
     const sakit = teacherRecords.filter((r) => r.status === 'SAKIT').length;
     const izin = teacherRecords.filter((r) => r.status === 'IZIN').length;
     const alpa = teacherRecords.filter((r) => r.status === 'ALPA').length;
-    const dinas = teacherRecords.filter((r) => r.status === 'DINAS_LUAR').length;
-    const totalRecorded = teacherRecords.length;
 
-    // Effective attendance rate: (Hadir + Dinas Luar) / total recorded (or 100% if empty)
-    const effectivePresent = hadir + dinas;
-    const rate = totalRecorded > 0 ? Math.round((effectivePresent / totalRecorded) * 100) : 100;
+    sumHadirAll += hadir;
+    sumDinasAll += dinas;
+    sumSakitAll += sakit;
+    sumIzinAll += izin;
+    sumAlpaAll += alpa;
+
+    // Effective present days = Hadir + Dinas Luar
+    const totalPresent = hadir + dinas;
+    // Percentage calculated automatically against official effective school days (HE)
+    const rate = Math.min(100, Math.round((totalPresent / (effectiveSchoolDays || 1)) * 100));
+    totalPercentSum += rate;
+
+    // Official rating predicate
+    let predikat = 'Sangat Baik';
+    if (rate < 75) predikat = 'Perlu Pembinaan';
+    else if (rate < 85) predikat = 'Cukup';
+    else if (rate < 95) predikat = 'Baik';
 
     tableData.push([
       idx + 1,
       teacher.code,
       teacher.name,
       hadir,
+      dinas,
       sakit,
       izin,
       alpa,
-      dinas,
-      totalRecorded,
+      totalPresent,
+      effectiveSchoolDays,
       `${rate}%`,
+      predikat,
     ]);
   });
 
+  const overallAvgRate = allTeachers.length > 0 ? Math.round(totalPercentSum / allTeachers.length) : 100;
+  const overallPredikat =
+    overallAvgRate >= 95 ? 'Sangat Baik (A)' : overallAvgRate >= 85 ? 'Baik (B)' : overallAvgRate >= 75 ? 'Cukup (C)' : 'Perlu Pembinaan';
+
+  // Draw 4-card summary row
+  const boxWidth = (pageWidth - 28) / 4;
+  const boxHeight = 13;
+
+  const kpis = [
+    { label: 'JUMLAH GURU TERDATA', value: `${allTeachers.length} Orang` },
+    { label: 'HARI EFEKTIF KERJA (HE)', value: `${effectiveSchoolDays} Hari KBM` },
+    { label: 'RATA-RATA KEHADIRAN', value: `${overallAvgRate}% Otomatis` },
+    { label: 'PREDIKAT MADRASAH', value: overallPredikat },
+  ];
+
+  kpis.forEach((kpi, kIdx) => {
+    const x = 14 + kIdx * boxWidth;
+    doc.setFillColor(248, 251, 249);
+    doc.setDrawColor(215, 230, 222);
+    doc.roundedRect(x, currentY, boxWidth - 3, boxHeight, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(80, 105, 95);
+    doc.text(kpi.label, x + (boxWidth - 3) / 2, currentY + 4.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(11, 52, 53);
+    doc.text(kpi.value, x + (boxWidth - 3) / 2, currentY + 10, { align: 'center' });
+  });
+
+  currentY += boxHeight + 4;
+
+  // 4. FORMAL TABLE WITH AUTOMATIC PERCENTAGE AND RECAP
+  const headers = [
+    'No',
+    'Kode',
+    'Nama Lengkap Guru / Pendidik',
+    'Hadir (H)',
+    'Dinas (DL)',
+    'Sakit (S)',
+    'Izin (I)',
+    'Alpa (A)',
+    'Total (H+DL)',
+    'Target (HE)',
+    '% Kehadiran',
+    'Predikat',
+  ];
+
+  // Append summary row
+  tableData.push([
+    '',
+    '',
+    'TOTAL & RATA-RATA MADRASAH',
+    sumHadirAll,
+    sumDinasAll,
+    sumSakitAll,
+    sumIzinAll,
+    sumAlpaAll,
+    sumHadirAll + sumDinasAll,
+    effectiveSchoolDays,
+    `${overallAvgRate}%`,
+    overallPredikat,
+  ]);
+
   autoTable(doc, {
-    startY: 50,
+    startY: currentY,
     head: [headers],
     body: tableData,
     theme: 'grid',
     headStyles: {
-      fillColor: TEAL,
+      fillColor: [11, 52, 53], // Formal deep teal
       textColor: 255,
-      fontSize: 8.5,
+      fontSize: 8,
       fontStyle: 'bold',
       halign: 'center',
+      cellPadding: 2.8,
     },
     bodyStyles: {
       fontSize: 8,
       halign: 'center',
-      cellPadding: 3,
+      cellPadding: 2.2,
+      textColor: [20, 35, 33],
     },
     columnStyles: {
-      1: { halign: 'center', cellWidth: 20 },
-      2: { halign: 'left', cellWidth: 70 },
-      9: { halign: 'center', fontStyle: 'bold' },
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'center', cellWidth: 16 },
+      2: { halign: 'left', cellWidth: orientation === 'landscape' ? 64 : 45 },
+      3: { halign: 'center', cellWidth: 16 },
+      4: { halign: 'center', cellWidth: 16 },
+      5: { halign: 'center', cellWidth: 14 },
+      6: { halign: 'center', cellWidth: 14 },
+      7: { halign: 'center', cellWidth: 14 },
+      8: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
+      9: { halign: 'center', cellWidth: 18 },
+      10: { halign: 'center', cellWidth: 22, fontStyle: 'bold', fillColor: [240, 248, 243] },
+      11: { halign: 'center', cellWidth: orientation === 'landscape' ? 28 : 22 },
+    },
+    didParseCell: (data) => {
+      // Highlight bottom summary row
+      if (data.row.index === tableData.length - 1) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [232, 244, 238];
+        data.cell.styles.textColor = [11, 52, 53];
+      }
     },
     alternateRowStyles: {
-      fillColor: [248, 250, 248],
+      fillColor: [252, 253, 252],
     },
     margin: { left: 14, right: 14 },
   });
 
   const lastTable = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
-  addSignatureBlock(doc, state.settings.schoolName, lastTable.finalY);
+  let nextY = lastTable.finalY + 4;
+
+  // 5. OFFICIAL NOTES & CALCULATION BASIS
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(90, 105, 100);
+  doc.text(
+    '* Keterangan Kode: H = Hadir Bertugas, DL = Bertugas Dinas Luar Resmi, S = Sakit dengan Surat, I = Izin Tertulis, A = Alpa / Tanpa Keterangan.',
+    14,
+    nextY,
+  );
+  nextY += 3.2;
+  doc.text(
+    '* Rumus Persentase Kehadiran: % Kehadiran = ((Hadir + Dinas Luar) / Hari Efektif) x 100% (Standar Pengawasan Madrasah & Penilaian Kinerja Guru).',
+    14,
+    nextY,
+  );
+
+  // 6. FORMAL SIGNATURE BLOCK (PENGESAHAN)
+  let sigY = nextY + 7;
+  if (sigY + 36 > pageHeight - 15) {
+    doc.addPage();
+    sigY = 22;
+  }
+
+  const signerCity = options?.signerCity || 'Madrasah';
+  const signerDate =
+    options?.signerDate ||
+    new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+  const principalName = options?.principalName || 'Drs. H. M. Zainuddin, M.Pd.I';
+  const principalNip = options?.principalNip || '197405101999031003';
+  const officerTitle = options?.officerTitle || 'Koordinator Akademik & Kurikulum';
+  const officerName = options?.officerName || 'Ahmad Fauzi, S.Pd.';
+  const officerNip = options?.officerNip || '198204122008011015';
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(23, 54, 55);
+
+  // Left Signer (Koordinator Kurikulum)
+  const leftX = 20;
+  doc.text('Mengetahui / Memeriksa,', leftX, sigY);
+  doc.setFont('helvetica', 'bold');
+  doc.text(officerTitle, leftX, sigY + 4.5);
+  doc.setFont('helvetica', 'normal');
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(officerName, leftX, sigY + 24);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(`NIP. ${officerNip}`, leftX, sigY + 28);
+
+  // Right Signer (Kepala Madrasah)
+  const rightX = pageWidth - (orientation === 'landscape' ? 85 : 75);
+  doc.setFontSize(8.5);
+  doc.text(`${signerCity}, ${signerDate}`, rightX, sigY);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Kepala Madrasah ${state.settings.schoolName}`, rightX, sigY + 4.5);
+  doc.setFont('helvetica', 'normal');
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(principalName, rightX, sigY + 24);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(`NIP. ${principalNip}`, rightX, sigY + 28);
+
+  // 7. OFFICIAL FOOTER ON ALL PAGES
   addDocFooter(doc, state.settings.schoolName);
 
   const cleanMonth = monthName.replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`SIGNAL_Rekap_Absensi_Guru_${cleanMonth}.pdf`);
+  doc.save(`SIGNAL_Rekap_Presensi_Guru_${cleanMonth}.pdf`);
 }
