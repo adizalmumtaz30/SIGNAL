@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleHelp,
   Clock,
   Clock3,
@@ -114,7 +115,7 @@ const navItems: Array<{ id: ScreenId; label: string; icon: LucideIcon; section?:
   { id: 'validation', label: 'Validasi & Konflik', icon: ShieldCheck, section: 'GOVERNANCE' },
   { id: 'history', label: 'Riwayat Versi', icon: History },
   { id: 'backup', label: 'Ekspor & Backup', icon: Archive, section: 'DATA CONTROL' },
-  { id: 'settings', label: 'Pengaturan', icon: Settings2 },
+  { id: 'settings', label: 'Jam KBM & Pengaturan', icon: Clock },
 ];
 
 type MasterTab = 'classes' | 'teachers' | 'subjects';
@@ -146,7 +147,7 @@ function titleForScreen(screen: ScreenId) {
     validation: 'Validasi & konflik',
     history: 'Riwayat versi',
     backup: 'Ekspor & backup',
-    settings: 'Pengaturan workspace',
+    settings: 'Pengaturan jam KBM & durasi JP',
   };
   return titles[screen];
 }
@@ -1513,6 +1514,9 @@ function ScheduleScreen({
                 Urungkan
               </Button>
             )}
+            <Button variant="secondary" icon={Clock} onClick={() => onNavigate('settings')} title="Atur durasi JP, jam mulai-selesai, dan kategori KBM/Istirahat">
+              Jam KBM &amp; Durasi JP
+            </Button>
             <Button variant="secondary" icon={Download} onClick={onOpenPdfModal}>
               Ekspor PDF (A4)
             </Button>
@@ -1662,6 +1666,24 @@ function ScheduleScreen({
                 >
                   {report.valid ? '100% Bebas Bentrok' : `${report.hardErrorCount} Konflik`}
                 </strong>
+              </div>
+            </div>
+
+            <div
+              className="surface-card"
+              style={{ padding: '12px 16px', cursor: 'pointer', background: '#f6faf8' }}
+              onClick={() => onNavigate('settings')}
+              title="Klik untuk mengatur durasi JP dan jam KBM/istirahat"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '10.5px', color: '#24635e', fontWeight: 800, letterSpacing: '0.04em' }}>
+                  DURASI 1 JP
+                </span>
+                <Clock size={13} color="#24635e" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+                <strong style={{ fontSize: '20px', color: '#24635e' }}>{periodMinutes}</strong>
+                <span style={{ fontSize: '11px', color: '#687a75' }}>Menit / JP · Atur &rarr;</span>
               </div>
             </div>
           </div>
@@ -2157,11 +2179,43 @@ function SettingsScreen({
     setDefinitions(updated);
   };
 
-  const handleAddSlot = () => {
+  const handleDurationChange = (index: number, newMinutes: number) => {
+    const safeDur = Math.max(5, Math.min(180, newMinutes || 40));
+    const def = definitions[index];
+    const startMins = clockToMinutes(def.start);
+    const newEnd = toClock(startMins + safeDur);
+    handleUpdateDef(index, { end: newEnd });
+  };
+
+  const handleStartTimeChange = (index: number, newStart: string) => {
+    const def = definitions[index];
+    const currentDur = Math.max(5, clockToMinutes(def.end) - clockToMinutes(def.start));
+    const startMins = clockToMinutes(newStart);
+    const newEnd = toClock(startMins + currentDur);
+    handleUpdateDef(index, { start: newStart, end: newEnd });
+  };
+
+  const handleMoveSlot = (index: number, direction: 'up' | 'down') => {
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= definitions.length) return;
+    const updated = [...definitions];
+    const temp = updated[index];
+    updated[index] = updated[target];
+    updated[target] = temp;
+    setDefinitions(updated.map((item, idx) => ({ ...item, order: idx + 1 })));
+  };
+
+  const handleAddSlot = (
+    activityType: ActivityType = 'KBM',
+    customMinutes?: number,
+    customName?: string,
+    applicableDays?: Day[]
+  ) => {
     const last = definitions[definitions.length - 1];
     const order = definitions.length + 1;
     const startMins = last ? clockToMinutes(last.end) : 7 * 60;
-    const endMins = startMins + Number(periodMinutes);
+    const dur = customMinutes ?? (activityType === 'KBM' ? Number(periodMinutes) || 40 : activityType === 'ISTIRAHAT' ? 20 : 30);
+    const endMins = startMins + dur;
 
     setDefinitions([
       ...definitions,
@@ -2169,9 +2223,48 @@ function SettingsScreen({
         order,
         start: toClock(startMins),
         end: toClock(endMins),
-        activityType: 'KBM',
+        activityType,
+        activityName: customName || (
+          activityType === 'ISTIRAHAT'
+            ? 'Istirahat'
+            : activityType === 'UPACARA'
+            ? 'Upacara Bendera'
+            : activityType === 'RELIGI'
+            ? 'Sholat Dhuha / Tadarus'
+            : ''
+        ),
+        applicableDays,
       },
     ]);
+  };
+
+  const handleCascadeSequentialTimes = (baseMinutes?: number) => {
+    if (!definitions.length) return;
+    const kbmDur = baseMinutes ?? (Number(periodMinutes) || 40);
+    const firstStart = clockToMinutes(definitions[0].start || '07:00');
+    let cursor = firstStart;
+
+    const updated = definitions.map((def, idx) => {
+      let dur = Math.max(5, clockToMinutes(def.end) - clockToMinutes(def.start));
+      if (def.activityType === 'KBM') {
+        dur = kbmDur;
+      }
+      const start = toClock(cursor);
+      const end = toClock(cursor + dur);
+      cursor += dur;
+      return {
+        ...def,
+        order: idx + 1,
+        start,
+        end,
+      };
+    });
+    setDefinitions(updated);
+  };
+
+  const handleQuickDurationPreset = (mins: number) => {
+    setPeriodMinutes(String(mins));
+    handleCascadeSequentialTimes(mins);
   };
 
   const handleDeleteSlot = (index: number) => {
@@ -2284,13 +2377,14 @@ function SettingsScreen({
               </div>
             </Card>
 
-            {/* 2. Period Definitions (Jam ke-1..N with Activity Types) */}
+            {/* 2. Period Definitions (Jam ke-1..N with Activity Types & Durations) */}
             <Card
               eyebrow="PERIOD SLOTS & ACTIVITIES"
-              title="Pengaturan Jam ke-1 sampai Selesai"
+              title="Pengaturan Durasi JP & Susunan Jam Kegiatan (KBM, Istirahat, Upacara, Religi)"
               action={
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button
+                    type="button"
                     className="button button-quiet"
                     style={{ fontSize: '11px', height: '32px' }}
                     onClick={() => {
@@ -2300,149 +2394,351 @@ function SettingsScreen({
                   >
                     Template Standar (8 JP)
                   </button>
-                  <button className="button button-secondary" style={{ fontSize: '11px', height: '32px' }} onClick={handleAddSlot}>
-                    <Plus size={14} /> Tambah Jam
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    style={{ fontSize: '11px', height: '32px' }}
+                    onClick={() => {
+                      const dur = Number(periodMinutes) || 40;
+                      let cursor = 7 * 60; // 07:00
+                      const defs: PeriodDefinition[] = [
+                        { order: 1, start: toClock(cursor), end: toClock(cursor + 40), activityType: 'UPACARA', activityName: 'Upacara Bendera', applicableDays: ['Senin'] },
+                      ];
+                      cursor += 40;
+                      for (let i = 1; i <= 9; i++) {
+                        defs.push({ order: defs.length + 1, start: toClock(cursor), end: toClock(cursor + dur), activityType: 'KBM' });
+                        cursor += dur;
+                        if (i === 3) {
+                          defs.push({ order: defs.length + 1, start: toClock(cursor), end: toClock(cursor + 20), activityType: 'ISTIRAHAT', activityName: 'Istirahat Pagi' });
+                          cursor += 20;
+                        } else if (i === 6) {
+                          defs.push({ order: defs.length + 1, start: toClock(cursor), end: toClock(cursor + 40), activityType: 'RELIGI', activityName: 'Sholat Dhuhur Berjamaah' });
+                          cursor += 40;
+                        }
+                      }
+                      setDefinitions(defs);
+                    }}
+                    title="Muat susunan Full Day (Upacara + 9 JP KBM + Istirahat + Sholat Dhuhur)"
+                  >
+                    Template Full Day
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    style={{ fontSize: '11px', height: '32px' }}
+                    onClick={() => handleAddSlot('ISTIRAHAT', 20, 'Istirahat')}
+                  >
+                    <Plus size={14} /> Sisipkan Istirahat
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    style={{ fontSize: '11px', height: '32px' }}
+                    onClick={() => handleAddSlot('KBM')}
+                  >
+                    <Plus size={14} /> Tambah Jam KBM
                   </button>
                 </div>
               }
             >
               <p className="settings-card-intro">
-                Tentukan urutan jam madrasah dari jam ke-1 sampai selesai. Slot berjenis <strong>Belajar Mengajar (KBM)</strong> dialokasikan untuk jadwal mapel, sedangkan slot <strong>Upacara, Istirahat, Religi,</strong> dan <strong>Kegiatan Lain</strong> diblokir dari KBM.
+                Tentukan urutan jam madrasah dari jam pertama sampai selesai. Durasi tiap jam dapat disesuaikan dalam menit. Slot berjenis <strong>🟢 Belajar Mengajar (KBM)</strong> otomatis dialokasikan untuk mata pelajaran &amp; beban mengajar guru, sedangkan slot <strong>🟡 Istirahat, 🔴 Upacara, 🟣 Religi,</strong> dan <strong>⚪ Kegiatan Lain</strong> otomatis diblokir dari KBM.
               </p>
 
+              {/* HERO BANNER: PENGATURAN DURASI STANDAR 1 JP (MENIT) */}
+              <div className="period-duration-banner">
+                <div className="period-duration-banner-top">
+                  <div className="period-duration-title">
+                    <Clock size={20} color="#24635e" />
+                    <div>
+                      <strong>DURASI STANDAR 1 JAM PELAJARAN (JP)</strong>
+                      <span style={{ display: 'block', fontSize: '11.5px', color: '#556663', marginTop: '2px' }}>
+                        Acuan menit tatap muka per JP dan dasar konversi jam astronomis (SKMT / Beban Guru).
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="period-duration-controls">
+                    <div className="duration-input-wrap">
+                      <input
+                        type="number"
+                        min="20"
+                        max="90"
+                        value={periodMinutes}
+                        onChange={(e) => setPeriodMinutes(e.target.value)}
+                        title="Durasi dalam menit per JP"
+                      />
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#173637' }}>Menit / JP</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <button
+                        type="button"
+                        className={`duration-preset-btn ${Number(periodMinutes) === 35 ? 'active' : ''}`}
+                        onClick={() => handleQuickDurationPreset(35)}
+                        title="Terapkan 35 menit per JP untuk jenjang MI/SD"
+                      >
+                        35 Mnt (MI)
+                      </button>
+                      <button
+                        type="button"
+                        className={`duration-preset-btn ${Number(periodMinutes) === 40 ? 'active' : ''}`}
+                        onClick={() => handleQuickDurationPreset(40)}
+                        title="Terapkan 40 menit per JP (Standar MTs Kemenag)"
+                      >
+                        40 Mnt (MTs Standar)
+                      </button>
+                      <button
+                        type="button"
+                        className={`duration-preset-btn ${Number(periodMinutes) === 45 ? 'active' : ''}`}
+                        onClick={() => handleQuickDurationPreset(45)}
+                        title="Terapkan 45 menit per JP untuk jenjang MA/SMA"
+                      >
+                        45 Mnt (MA)
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      style={{ fontSize: '11.5px', height: '34px', gap: '6px' }}
+                      onClick={() => handleCascadeSequentialTimes()}
+                      title="Hitung ulang jam mulai & selesai secara berurutan tanpa jeda"
+                    >
+                      <RefreshCw size={13} /> Sinkronkan Jam Berurutan (Cascade)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="period-categories-legend">
+                  <span style={{ fontWeight: 800, color: '#103f3e', letterSpacing: '0.04em' }}>KATEGORI JAM:</span>
+                  <span className="category-badge category-badge-kbm" title="Masuk perhitungan KBM, alokasi kelas, dan jam mengajar guru">
+                    🟢 Belajar Mengajar (KBM)
+                  </span>
+                  <span className="category-badge category-badge-istirahat" title="Jeda istirahat siswa dan guru, diblokir dari KBM">
+                    🟡 Istirahat
+                  </span>
+                  <span className="category-badge category-badge-upacara" title="Upacara bendera / apel madrasah, diblokir dari KBM">
+                    🔴 Upacara Bendera
+                  </span>
+                  <span className="category-badge category-badge-religi" title="Sholat dhuha, tadarus Al-Qur'an, atau pembiasaan ibadah, diblokir dari KBM">
+                    🟣 Religi / Dhuha
+                  </span>
+                  <span className="category-badge category-badge-lainnya" title="Kegiatan khusus madrasah, literasi, atau ekstrakurikuler">
+                    ⚪ Kegiatan Lain
+                  </span>
+                </div>
+              </div>
+
+              {/* Period Table with interactive Durasi column and Reordering */}
               <div className="data-table-wrap">
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '55px' }}>Jam</th>
-                      <th style={{ width: '105px' }}>Mulai</th>
-                      <th style={{ width: '105px' }}>Selesai</th>
-                      <th style={{ width: '170px' }}>Jenis Kegiatan</th>
-                      <th style={{ width: '140px' }}>Hari Berlaku</th>
+                      <th style={{ width: '65px', textAlign: 'center' }}>Urutan</th>
+                      <th style={{ width: '95px' }}>Mulai</th>
+                      <th style={{ width: '85px', textAlign: 'center' }}>Durasi</th>
+                      <th style={{ width: '95px' }}>Selesai</th>
+                      <th style={{ width: '180px' }}>Kategori JP / Jenis Kegiatan</th>
+                      <th style={{ width: '135px' }}>Hari Berlaku</th>
                       <th>Nama Kegiatan / Keterangan</th>
-                      <th style={{ width: '45px', textAlign: 'center' }}>Aksi</th>
+                      <th style={{ width: '75px', textAlign: 'center' }}>Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {definitions.map((def, idx) => (
-                      <tr key={idx}>
-                        <td style={{ textAlign: 'center', fontWeight: 700 }}>#{def.order}</td>
-                        <td>
-                          <input
-                            type="time"
-                            value={def.start}
-                            onChange={(e) => handleUpdateDef(idx, { start: e.target.value })}
-                            style={{ padding: '6px', borderRadius: '6px', border: '1px solid #c8d3cc', width: '100%', fontSize: '12px' }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="time"
-                            value={def.end}
-                            onChange={(e) => handleUpdateDef(idx, { end: e.target.value })}
-                            style={{ padding: '6px', borderRadius: '6px', border: '1px solid #c8d3cc', width: '100%', fontSize: '12px' }}
-                          />
-                        </td>
-                        <td>
-                          <select
-                            value={def.activityType}
-                            onChange={(e) => handleUpdateDef(idx, { activityType: e.target.value as ActivityType })}
-                            style={{
-                              padding: '6px 8px',
-                              borderRadius: '6px',
-                              fontWeight: 600,
-                              fontSize: '11px',
-                              border: '1px solid #c8d3cc',
-                              width: '100%',
-                            }}
-                          >
-                            <option value="KBM">🟢 Belajar Mengajar (KBM)</option>
-                            <option value="UPACARA">🔴 Upacara Bendera</option>
-                            <option value="ISTIRAHAT">🟡 Istirahat</option>
-                            <option value="RELIGI">🟣 Religi / Dhuha</option>
-                            <option value="LAINNYA">⚪ Kegiatan Lain</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select
-                            value={
-                              !def.applicableDays || def.applicableDays.length === 0
-                                ? 'ALL'
-                                : def.applicableDays.length === 1 && def.applicableDays[0] === 'Senin'
-                                ? 'SENIN'
-                                : def.applicableDays.length === 1 && def.applicableDays[0] === 'Jumat'
-                                ? 'JUMAT'
-                                : def.applicableDays.length === 1 && def.applicableDays[0] === 'Sabtu'
-                                ? 'SABTU'
-                                : def.applicableDays.length === 4 && def.applicableDays.includes('Senin') && def.applicableDays.includes('Kamis')
-                                ? 'SENIN_KAMIS'
-                                : 'ALL'
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              let days: Day[] | undefined = undefined;
-                              if (val === 'SENIN') days = ['Senin'];
-                              else if (val === 'JUMAT') days = ['Jumat'];
-                              else if (val === 'SABTU') days = ['Sabtu'];
-                              else if (val === 'SENIN_KAMIS') days = ['Senin', 'Selasa', 'Rabu', 'Kamis'];
-                              handleUpdateDef(idx, { applicableDays: days });
-                            }}
-                            style={{
-                              padding: '6px 8px',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              border: '1px solid #c8d3cc',
-                              width: '100%',
-                            }}
-                          >
-                            <option value="ALL">Semua Hari Aktif</option>
-                            <option value="SENIN">Hanya Senin</option>
-                            <option value="JUMAT">Hanya Jumat</option>
-                            <option value="SENIN_KAMIS">Senin — Kamis</option>
-                            <option value="SABTU">Hanya Sabtu</option>
-                          </select>
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            placeholder={
-                              def.activityType === 'KBM'
-                                ? 'Jam Pelajaran KBM'
-                                : def.activityType === 'UPACARA'
-                                ? 'Upacara Bendera'
-                                : def.activityType === 'ISTIRAHAT'
-                                ? 'Istirahat'
-                                : def.activityType === 'RELIGI'
-                                ? 'Sholat Dhuha / Tadarus'
-                                : 'Nama kegiatan...'
-                            }
-                            value={def.activityName || ''}
-                            onChange={(e) => handleUpdateDef(idx, { activityName: e.target.value })}
-                            style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #c8d3cc', width: '100%', fontSize: '11px' }}
-                          />
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            className="icon-button table-row-action"
-                            onClick={() => handleDeleteSlot(idx)}
-                            title="Hapus jam kegiatan ini"
-                            disabled={definitions.length <= 1}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {definitions.map((def, idx) => {
+                      const startMins = clockToMinutes(def.start);
+                      const endMins = clockToMinutes(def.end);
+                      const currentDur = Math.max(0, endMins - startMins);
+                      const isKbm = def.activityType === 'KBM';
+
+                      return (
+                        <tr key={idx} style={{ background: !isKbm ? '#fafbf9' : undefined }}>
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+                              <span style={{ fontWeight: 800, fontSize: '12px', color: '#173637' }}>#{def.order}</span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  style={{ width: '16px', height: '14px', padding: 0 }}
+                                  disabled={idx === 0}
+                                  onClick={() => handleMoveSlot(idx, 'up')}
+                                  title="Pindahkan jam ke atas"
+                                >
+                                  <ChevronUp size={11} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  style={{ width: '16px', height: '14px', padding: 0 }}
+                                  disabled={idx === definitions.length - 1}
+                                  onClick={() => handleMoveSlot(idx, 'down')}
+                                  title="Pindahkan jam ke bawah"
+                                >
+                                  <ChevronDown size={11} />
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <input
+                              type="time"
+                              value={def.start}
+                              onChange={(e) => handleStartTimeChange(idx, e.target.value)}
+                              title="Jam mulai"
+                              style={{ padding: '6px', borderRadius: '6px', border: '1px solid #c8d3cc', width: '100%', fontSize: '12px' }}
+                            />
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              <input
+                                type="number"
+                                min="5"
+                                max="180"
+                                step="5"
+                                value={currentDur || ''}
+                                onChange={(e) => handleDurationChange(idx, Number(e.target.value))}
+                                title="Ubah durasi dalam menit"
+                                style={{
+                                  width: '48px',
+                                  padding: '5px 2px',
+                                  textAlign: 'center',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #c8d3cc',
+                                  background: isKbm ? '#f4f8f6' : '#fff9f0',
+                                }}
+                              />
+                              <small style={{ fontSize: '10px', color: '#687a75' }}>mnt</small>
+                            </div>
+                          </td>
+                          <td>
+                            <input
+                              type="time"
+                              value={def.end}
+                              onChange={(e) => handleUpdateDef(idx, { end: e.target.value })}
+                              title="Jam selesai"
+                              style={{ padding: '6px', borderRadius: '6px', border: '1px solid #c8d3cc', width: '100%', fontSize: '12px' }}
+                            />
+                          </td>
+                          <td>
+                            <select
+                              value={def.activityType}
+                              onChange={(e) => {
+                                const newType = e.target.value as ActivityType;
+                                const changes: Partial<PeriodDefinition> = { activityType: newType };
+                                if (newType === 'ISTIRAHAT' && (!def.activityName || def.activityName === 'Jam Pelajaran KBM')) {
+                                  changes.activityName = 'Istirahat';
+                                } else if (newType === 'UPACARA') {
+                                  changes.activityName = 'Upacara Bendera';
+                                  changes.applicableDays = ['Senin'];
+                                } else if (newType === 'RELIGI' && (!def.activityName || def.activityName === 'Jam Pelajaran KBM')) {
+                                  changes.activityName = 'Sholat Dhuha / Tadarus';
+                                } else if (newType === 'KBM' && def.activityName === 'Istirahat') {
+                                  changes.activityName = '';
+                                }
+                                handleUpdateDef(idx, changes);
+                              }}
+                              style={{
+                                padding: '6px 8px',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                                fontSize: '11px',
+                                border: '1px solid #c8d3cc',
+                                width: '100%',
+                              }}
+                            >
+                              <option value="KBM">🟢 Belajar Mengajar (KBM)</option>
+                              <option value="UPACARA">🔴 Upacara Bendera</option>
+                              <option value="ISTIRAHAT">🟡 Istirahat</option>
+                              <option value="RELIGI">🟣 Religi / Dhuha</option>
+                              <option value="LAINNYA">⚪ Kegiatan Lain</option>
+                            </select>
+                          </td>
+                          <td>
+                            <select
+                              value={
+                                !def.applicableDays || def.applicableDays.length === 0
+                                  ? 'ALL'
+                                  : def.applicableDays.length === 1 && def.applicableDays[0] === 'Senin'
+                                  ? 'SENIN'
+                                  : def.applicableDays.length === 1 && def.applicableDays[0] === 'Jumat'
+                                  ? 'JUMAT'
+                                  : def.applicableDays.length === 1 && def.applicableDays[0] === 'Sabtu'
+                                  ? 'SABTU'
+                                  : def.applicableDays.length === 4 && def.applicableDays.includes('Senin') && def.applicableDays.includes('Kamis')
+                                  ? 'SENIN_KAMIS'
+                                  : 'ALL'
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                let days: Day[] | undefined = undefined;
+                                if (val === 'SENIN') days = ['Senin'];
+                                else if (val === 'JUMAT') days = ['Jumat'];
+                                else if (val === 'SABTU') days = ['Sabtu'];
+                                else if (val === 'SENIN_KAMIS') days = ['Senin', 'Selasa', 'Rabu', 'Kamis'];
+                                handleUpdateDef(idx, { applicableDays: days });
+                              }}
+                              style={{
+                                padding: '6px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                border: '1px solid #c8d3cc',
+                                width: '100%',
+                              }}
+                            >
+                              <option value="ALL">Semua Hari Aktif</option>
+                              <option value="SENIN">Hanya Senin</option>
+                              <option value="JUMAT">Hanya Jumat</option>
+                              <option value="SENIN_KAMIS">Senin — Kamis</option>
+                              <option value="SABTU">Hanya Sabtu</option>
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              placeholder={
+                                def.activityType === 'KBM'
+                                  ? 'Jam Pelajaran KBM'
+                                  : def.activityType === 'UPACARA'
+                                  ? 'Upacara Bendera'
+                                  : def.activityType === 'ISTIRAHAT'
+                                  ? 'Istirahat'
+                                  : def.activityType === 'RELIGI'
+                                  ? 'Sholat Dhuha / Tadarus'
+                                  : 'Nama kegiatan...'
+                              }
+                              value={def.activityName || ''}
+                              onChange={(e) => handleUpdateDef(idx, { activityName: e.target.value })}
+                              style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #c8d3cc', width: '100%', fontSize: '11px' }}
+                            />
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="icon-button table-row-action"
+                              onClick={() => handleDeleteSlot(idx)}
+                              title="Hapus jam kegiatan ini"
+                              disabled={definitions.length <= 1}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <span style={{ fontSize: '11px', color: '#556663' }}>
-                  Total {definitions.filter((d) => d.activityType === 'KBM').length} Jam Pelajaran (KBM) · {definitions.filter((d) => d.activityType !== 'KBM').length} Jam Non-KBM Terjadwal
+                  <strong>{definitions.filter((d) => d.activityType === 'KBM').length} Jam Pelajaran (KBM)</strong> · {definitions.filter((d) => d.activityType !== 'KBM').length} Jam Non-KBM Terjadwal · Rentang {definitions[0]?.start ?? '07:00'} sampai {definitions[definitions.length - 1]?.end ?? '13:00'} ({Number(periodMinutes) || 40} Menit/JP)
                 </span>
                 <button className="button button-primary" onClick={handleSave}>
-                  <Save size={15} /> Simpan Pengaturan Jam
+                  <Save size={15} /> Simpan Pengaturan Jam &amp; Durasi JP
                 </button>
               </div>
             </Card>
@@ -2627,15 +2923,52 @@ function SettingsScreen({
           </div>
 
           <aside className="settings-side-column">
-            <Card eyebrow="DURATION STANDARD" title="Konversi Astronomis">
+            <Card eyebrow="DURATION & STANDARDS" title="Ringkasan Jam & Konversi JP">
               <div className="field-group">
-                <label>Durasi 1 JP (Menit)</label>
-                <select value={periodMinutes} onChange={(e) => setPeriodMinutes(e.target.value)}>
+                <label>Durasi Standar 1 JP</label>
+                <select
+                  value={periodMinutes}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPeriodMinutes(val);
+                    handleCascadeSequentialTimes(Number(val));
+                  }}
+                >
                   <option value="35">35 Menit (SD/MI)</option>
-                  <option value="40">40 Menit (MTs / Standar)</option>
+                  <option value="40">40 Menit (MTs / Standar Kemenag)</option>
                   <option value="45">45 Menit (MA / SMA)</option>
                 </select>
-                <small>Digunakan untuk menghitung jam astronomis pada dashboard Beban Guru.</small>
+                <small>1 JP setara {((Number(periodMinutes) || 40) / 60).toFixed(2)} jam astronomis (60 mnt).</small>
+              </div>
+
+              <div style={{ marginTop: '14px', padding: '12px', background: '#f5f8f6', borderRadius: '8px', border: '1px solid #d4e4db', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#556663' }}>Jam KBM per hari:</span>
+                  <strong>{definitions.filter((d) => d.activityType === 'KBM').length} JP</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#556663' }}>Non-KBM per hari:</span>
+                  <strong>{definitions.filter((d) => d.activityType !== 'KBM').length} Sesi</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#556663' }}>Hari aktif madrasah:</span>
+                  <strong>{activeDays.length} Hari</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #c0d7cb', paddingTop: '6px' }}>
+                  <span style={{ color: '#173637', fontWeight: 700 }}>Kapasitas Kelas/Minggu:</span>
+                  <strong style={{ color: '#1f6952' }}>{activeDays.length * definitions.filter((d) => d.activityType === 'KBM').length} JP</strong>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '12px' }}>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  style={{ width: '100%', fontSize: '11px', height: '32px' }}
+                  onClick={() => handleCascadeSequentialTimes()}
+                >
+                  <RefreshCw size={13} /> Sinkronkan Seluruh Jam
+                </button>
               </div>
             </Card>
 

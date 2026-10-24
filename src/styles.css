@@ -852,3 +852,100 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .ai-response-error { color: #8b3c34; background: #fff0ed; border: 1px solid #f2d2cb; }
 .ai-response-output { color: var(--ink, #193b39); background: #f3f6ee; border: 1px solid #dde7d8; }
 .ai-response-output p { margin: 0; white-space: pre-wrap; }
+
+/* Period Duration & Slots Config Banner */
+.period-duration-banner {
+  background: linear-gradient(135deg, #f4f8f6 0%, #edf5f1 100%);
+  border: 1.5px solid #cbe3d7;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.period-duration-banner-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.period-duration-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.period-duration-title strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: #103f3e;
+  letter-spacing: 0.02em;
+}
+.period-duration-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.duration-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1.5px solid #24635e;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+.duration-input-wrap input {
+  width: 50px;
+  border: none;
+  font-size: 15px;
+  font-weight: 800;
+  color: #103f3e;
+  text-align: center;
+  outline: none;
+}
+.duration-preset-btn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #c2d8cc;
+  background: #ffffff;
+  color: #24635e;
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: all 0.15s ease;
+}
+.duration-preset-btn:hover {
+  background: #e6f2ec;
+  border-color: #24635e;
+}
+.duration-preset-btn.active {
+  background: #24635e;
+  color: #ffffff;
+  border-color: #24635e;
+}
+.period-categories-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid #dbeae2;
+  font-size: 11px;
+}
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.category-badge-kbm { background: #e8f5ec; color: #1f6952; border: 1px solid #b7dfc8; }
+.category-badge-istirahat { background: #fef8e7; color: #9c6f28; border: 1px solid #f2e0b1; }
+.category-badge-upacara { background: #fdf2f0; color: #b24c3d; border: 1px solid #f9ccc6; }
+.category-badge-religi { background: #f6eefc; color: #6a2f96; border: 1px solid #dec4f5; }
+.category-badge-lainnya { background: #f0f3f3; color: #445653; border: 1px solid #c8d4d1; }
+
