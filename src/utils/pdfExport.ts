@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { AppState, Day, SchoolClass } from '../domain/types';
 import { jpToAstronomical } from '../domain/time';
+import { getDefaultMadrasahLogo } from './madrasahLogo';
 
 // Color palette matching SIGNAL branding
 const TEAL = [11, 52, 53] as [number, number, number]; // #0b3435
@@ -9,6 +10,261 @@ const TEAL_LIGHT = [235, 244, 240] as [number, number, number];
 const GOLD = [188, 148, 94] as [number, number, number]; // #bc945e
 const INK = [23, 54, 55] as [number, number, number];
 const MUTED = [117, 133, 130] as [number, number, number];
+
+export interface OfficialDocCustomTexts {
+  // Kop Surat Overrides
+  kopSurat?: boolean;
+  includeKop?: boolean;
+  ministry?: string;
+  regionalOffice?: string;
+  districtOffice?: string;
+  schoolName?: string;
+  nsm?: string;
+  npsn?: string;
+  address?: string;
+  city?: string;
+  postalCode?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  logoUrl?: string;
+
+  // Document Title & Heading Overrides
+  documentTitle?: string;
+  academicYear?: string;
+  semester?: string;
+  extraNotes?: string;
+
+  // Signature Block Overrides
+  signerCity?: string;
+  signerDate?: string;
+  principalTitle?: string;
+  principalName?: string;
+  principalNip?: string;
+  coordinatorTitle?: string;
+  coordinatorName?: string;
+  coordinatorNip?: string;
+  officerTitle?: string;
+  officerName?: string;
+  officerNip?: string;
+  leftTitle?: string;
+  leftName?: string;
+  leftNip?: string;
+  rightTitle?: string;
+  rightName?: string;
+  rightNip?: string;
+}
+
+/**
+ * Convert CSS Hex color string to [R, G, B] tuple
+ */
+export function hexToRgb(hex: string): [number, number, number] {
+  let c = hex.replace('#', '').trim();
+  if (c.length === 3) {
+    c = c.split('').map((char) => char + char).join('');
+  }
+  const num = parseInt(c, 16);
+  if (isNaN(num)) return [240, 244, 242];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+/**
+ * Produces soft, high-contrast, easily printable pastel tints for table cells.
+ * Tested for both crisp color laser printing and grayscale clarity.
+ */
+export function getPrintableCellColor(hex: string): { bg: [number, number, number]; text: [number, number, number] } {
+  const [r, g, b] = hexToRgb(hex);
+  // Blend with white: 20% hue, 80% white for high legibility
+  const bgR = Math.round(r * 0.20 + 255 * 0.80);
+  const bgG = Math.round(g * 0.20 + 255 * 0.80);
+  const bgB = Math.round(b * 0.20 + 255 * 0.80);
+
+  // Deep contrasting text tone from darker shade of the subject
+  const textR = Math.round(r * 0.50);
+  const textG = Math.round(g * 0.50);
+  const textB = Math.round(b * 0.50);
+
+  return { bg: [bgR, bgG, bgB], text: [textR, textG, textB] };
+}
+
+/**
+ * Common abbreviations for Indonesian school subjects to optimize print table space
+ */
+export function compactSubjectName(fullName: string, code?: string): string {
+  if (!fullName) return code || '—';
+  const trimmed = fullName.trim();
+
+  const knownMap: Record<string, string> = {
+    'Al-Qur\'an Hadis': 'Al-Qur\'an',
+    'Al-Qur’an Hadis': 'Al-Qur\'an',
+    'Al-Qur\'an Hadits': 'Al-Qur\'an',
+    'Akidah Akhlak': 'Akidah',
+    'Aqidah Akhlak': 'Akidah',
+    'Sejarah Kebudayaan Islam': 'SKI',
+    'Pendidikan Agama Islam': 'PAI',
+    'Pendidikan Agama Islam dan Budi Pekerti': 'PAI & BP',
+    'Pendidikan Pancasila': 'P. Pancasila',
+    'Pendidikan Pancasila dan Kewarganegaraan': 'PPKn',
+    'Pendidikan Kewarganegaraan': 'PKn',
+    'Bahasa Indonesia': 'B. Indo',
+    'Bahasa Inggris': 'B. Ingg',
+    'Bahasa Arab': 'B. Arab',
+    'Bahasa Jawa': 'B. Jawa',
+    'Matematika': 'Matematika',
+    'Ilmu Pengetahuan Alam': 'IPA',
+    'Ilmu Pengetahuan Sosial': 'IPS',
+    'Pendidikan Jasmani, Olahraga, dan Kesehatan': 'PJOK',
+    'Pendidikan Jasmani Olahraga dan Kesehatan': 'PJOK',
+    'Pendidikan Jasmani dan Kesehatan': 'Penjasorkes',
+    'Teknologi Informasi dan Komunikasi': 'Informatika',
+    'Informatika': 'Informatika',
+    'Seni Budaya dan Keterampilan': 'Seni Budaya',
+    'Seni Budaya': 'Seni Budaya',
+    'Bimbingan dan Konseling': 'BK',
+    'Bimbingan Konseling': 'BK',
+    'Prakarya dan Kewirausahaan': 'Prakarya',
+    'Prakarya': 'Prakarya',
+    'Fikih': 'Fikih',
+    'Fiqih': 'Fikih',
+    'Tahfiz': 'Tahfiz',
+    'Tahfidz': 'Tahfiz',
+    'Ke-NU-an / Aswaja': 'Aswaja',
+    'Aswaja': 'Aswaja',
+  };
+
+  for (const [key, val] of Object.entries(knownMap)) {
+    if (trimmed.toLowerCase() === key.toLowerCase()) return val;
+  }
+
+  if (trimmed.startsWith('Bahasa ')) {
+    return 'B. ' + trimmed.slice(7);
+  }
+  if (trimmed.length > 14 && code) {
+    return code;
+  }
+  return trimmed;
+}
+
+/**
+ * Compact teacher name for dense schedule cells:
+ * e.g. "H. Ahmad Fauzi, S.Ag., M.Pd.I." -> "A. Fauzi"
+ */
+export function compactTeacherName(fullName: string, code?: string): string {
+  if (!fullName) return code || '—';
+  const trimmed = fullName.trim();
+  // Strip trailing academic degrees
+  const nameWithoutDegrees = trimmed.split(',')[0].trim();
+  const parts = nameWithoutDegrees.split(/\s+/).filter(Boolean);
+  if (parts.length > 2) {
+    // Abbreviate first name if multiple words: "Ahmad Fauzi Ridwan" -> "A. Fauzi Ridwan"
+    return `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
+  }
+  return nameWithoutDegrees;
+}
+
+/**
+ * Render Official Kop Surat Madrasah (Formal Letterhead)
+ * Includes Ministry, Regional Office, Madrasah Name, NSM, NPSN, Address, Contacts, and Official Logo.
+ * Fully supports live text overrides and compact layout for single-page documents.
+ */
+export function renderOfficialKopSurat(
+  doc: jsPDF,
+  state: AppState,
+  startY = 10,
+  overrides?: Partial<OfficialDocCustomTexts>,
+  isCompact = false,
+): number {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const s = state.settings;
+
+  const ministry = overrides?.ministry ?? s.ministry ?? 'KEMENTERIAN AGAMA REPUBLIK INDONESIA';
+  const regionalOffice = overrides?.regionalOffice ?? s.regionalOffice ?? 'KANTOR KEMENTERIAN AGAMA KABUPATEN MALANG';
+  const schoolName = overrides?.schoolName ?? s.schoolName ?? 'MTs Cendekia Nusantara';
+  const nsm = overrides?.nsm ?? s.nsm ?? '';
+  const npsn = overrides?.npsn ?? s.npsn ?? '';
+  const academicYear = overrides?.academicYear ?? s.academicYear ?? '2026/2027';
+  const semester = overrides?.semester ?? s.semester ?? 'Ganjil';
+  const address = overrides?.address ?? s.address ?? 'Jl. Raya Cendekia No. 45, Sumberpucung';
+  const city = overrides?.city ?? s.city ?? '';
+  const postalCode = overrides?.postalCode ?? s.postalCode ?? '';
+  const phone = overrides?.phone ?? s.phone ?? '';
+  const email = overrides?.email ?? s.email ?? '';
+  const logoData = overrides?.logoUrl ?? s.logoUrl ?? getDefaultMadrasahLogo();
+
+  const logoSize = isCompact ? 13.5 : 18; // mm
+  const logoX = 12;
+  const logoY = startY;
+
+  if (logoData) {
+    try {
+      doc.addImage(logoData, 'PNG', logoX, logoY, logoSize, logoSize);
+    } catch (e) {
+      console.warn('Could not render logo to PDF:', e);
+    }
+  }
+
+  const textLeft = isCompact ? 28 : 36;
+  const textRight = pageWidth - 12;
+  const textCenter = (textLeft + textRight) / 2;
+
+  let y = startY + (isCompact ? 2.5 : 3.5);
+
+  // 1. Kementerian yang menaungi
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(isCompact ? 8.8 : 10.5);
+  doc.setTextColor(15, 35, 33);
+  doc.text(ministry.toUpperCase(), textCenter, y, { align: 'center' });
+
+  // 2. Kantor Wilayah / Kankemenag
+  y += isCompact ? 3.8 : 4.5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(isCompact ? 8 : 9.5);
+  doc.setTextColor(25, 45, 43);
+  doc.text(regionalOffice.toUpperCase(), textCenter, y, { align: 'center' });
+
+  // 3. Nama Madrasah
+  y += isCompact ? 4.2 : 5.2;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(isCompact ? 10.5 : 12.5);
+  doc.setTextColor(...TEAL);
+  const normalizedSchool = schoolName.toUpperCase().startsWith('MADRASAH TSANAWIYAH') || schoolName.toUpperCase().startsWith('MTS')
+    ? schoolName.toUpperCase()
+    : `MADRASAH TSANAWIYAH ${schoolName.toUpperCase()}`;
+  doc.text(normalizedSchool, textCenter, y, { align: 'center' });
+
+  // 4. NSM & NPSN & Tahun Ajaran
+  y += isCompact ? 3.3 : 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(isCompact ? 6.8 : 7.8);
+  doc.setTextColor(60, 75, 70);
+  const nsmStr = nsm ? `NSM: ${nsm}` : '';
+  const npsnStr = npsn ? `NPSN: ${npsn}` : '';
+  const taStr = `T.A. ${academicYear} (${semester})`;
+  const line4 = [nsmStr, npsnStr, taStr].filter(Boolean).join('  ·  ');
+  doc.text(line4, textCenter, y, { align: 'center' });
+
+  // 5. Alamat, Kontak, Email, Website
+  y += isCompact ? 3 : 3.5;
+  doc.setFontSize(isCompact ? 6.5 : 7.2);
+  doc.setTextColor(80, 95, 90);
+  const cityStr = city ? `, ${city}` : '';
+  const postStr = postalCode ? ` ${postalCode}` : '';
+  const phoneStr = phone ? ` · Telp/WA: ${phone}` : '';
+  const emailStr = email ? ` · Email: ${email}` : '';
+  doc.text(`${address}${cityStr}${postStr}${phoneStr}${emailStr}`, textCenter, y, { align: 'center' });
+
+  // 6. Double Rule Line Divider
+  y += isCompact ? 2.8 : 3.5;
+  doc.setDrawColor(...TEAL);
+  doc.setLineWidth(isCompact ? 0.9 : 1.2);
+  doc.line(10, y, pageWidth - 10, y);
+
+  y += isCompact ? 0.9 : 1.2;
+  doc.setLineWidth(0.35);
+  doc.line(10, y, pageWidth - 10, y);
+
+  return y + (isCompact ? 3.5 : 5);
+}
 
 function addDocHeader(
   doc: jsPDF,
@@ -81,39 +337,79 @@ function addDocFooter(doc: jsPDF, schoolName: string) {
   }
 }
 
-function addSignatureBlock(doc: jsPDF, schoolName: string, startY: number) {
+function addSignatureBlock(
+  doc: jsPDF,
+  state: AppState,
+  startY: number,
+  customSigners?: {
+    city?: string;
+    date?: string;
+    leftTitle?: string;
+    leftName?: string;
+    leftNip?: string;
+    rightTitle?: string;
+    rightName?: string;
+    rightNip?: string;
+  },
+) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const s = state.settings;
 
-  let y = startY + 15;
-  if (y + 35 > pageHeight - 20) {
+  let y = startY + 12;
+  if (y + 36 > pageHeight - 16) {
     doc.addPage();
-    y = 35;
+    y = 26;
   }
 
-  const dateStr = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const dateStr =
+    customSigners?.date ||
+    new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+  const city = customSigners?.city || s.city || 'Kota Madrasah';
+  const leftTitle = customSigners?.leftTitle || s.curriculumLeaderTitle || 'Waka Bidang Kurikulum';
+  const leftName = customSigners?.leftName || s.curriculumLeaderName || 'Ahmad Fauzi, S.Pd.';
+  const leftNip = customSigners?.leftNip || s.curriculumLeaderNip || '198204122008011015';
+
+  const rightTitle = customSigners?.rightTitle || `${s.headmasterTitle || 'Kepala Madrasah'} ${s.schoolName}`;
+  const rightName = customSigners?.rightName || s.headmasterName || 'Drs. H. M. Zainuddin, M.Pd.I';
+  const rightNip = customSigners?.rightNip || s.headmasterNip || '197405101999031003';
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(...INK);
 
-  // Left signature (Waka Kurikulum)
-  const leftX = 25;
-  doc.text(`Mengetahui,`, leftX, y);
-  doc.text(`Waka Bidang Kurikulum`, leftX, y + 5);
-  doc.text(`( .................................................... )`, leftX, y + 26);
-  doc.text(`NIP. ...............................................`, leftX, y + 31);
+  // Left signature
+  const leftX = 22;
+  doc.text('Mengetahui / Memeriksa,', leftX, y);
+  doc.setFont('helvetica', 'bold');
+  doc.text(leftTitle, leftX, y + 4.5);
+  doc.setFont('helvetica', 'normal');
 
-  // Right signature (Kepala Madrasah)
-  const rightX = pageWidth - 80;
-  doc.text(`${schoolName}, ${dateStr}`, rightX, y);
-  doc.text(`Kepala Madrasah`, rightX, y + 5);
-  doc.text(`( .................................................... )`, rightX, y + 26);
-  doc.text(`NIP. ...............................................`, rightX, y + 31);
+  doc.setFont('helvetica', 'bold');
+  doc.text(leftName, leftX, y + 24);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(leftNip ? `NIP. ${leftNip}` : 'NIP. ...............................................', leftX, y + 28);
+
+  // Right signature
+  const isLandscape = pageWidth > 250;
+  const rightX = pageWidth - (isLandscape ? 85 : 75);
+  doc.setFontSize(8.5);
+  doc.text(`${city}, ${dateStr}`, rightX, y);
+  doc.setFont('helvetica', 'bold');
+  doc.text(rightTitle, rightX, y + 4.5);
+  doc.setFont('helvetica', 'normal');
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(rightName, rightX, y + 24);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(rightNip ? `NIP. ${rightNip}` : 'NIP. ...............................................', rightX, y + 28);
 }
 
 /**
@@ -126,16 +422,26 @@ export function exportScheduleMasterPDF(state: AppState): void {
   const activeDays = state.settings.activeDays;
   const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
 
-  addDocHeader(
-    doc,
-    'JADWAL PELAJARAN INDUK (MASTER)',
-    `Menampilkan seluruh kelas (${classes.map((c) => c.name).join(', ')})`,
-    state.settings.schoolName,
-    state.settings.academicYear,
-    state.settings.semester,
+  let currentY = renderOfficialKopSurat(doc, state, 10);
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...TEAL);
+  doc.text('JADWAL PELAJARAN INDUK MADRASAH (MASTER SCHEDULE)', pageWidth / 2, currentY, { align: 'center' });
+
+  currentY += 4.5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...MUTED);
+  doc.text(
+    `Matriks Seluruh Rombel (${classes.map((c) => c.name).join(', ')}) · T.A. ${state.settings.academicYear} Semester ${state.settings.semester}`,
+    pageWidth / 2,
+    currentY,
+    { align: 'center' },
   );
 
-  let currentY = 50;
+  currentY += 6;
 
   for (const day of activeDays) {
     const dayEntries = entries.filter((e) => e.day === day);
@@ -201,24 +507,23 @@ export function exportScheduleMasterPDF(state: AppState): void {
     currentY = lastAutoTable.finalY + 10;
   }
 
-  addSignatureBlock(doc, state.settings.schoolName, currentY);
+  addSignatureBlock(doc, state, currentY);
   addDocFooter(doc, state.settings.schoolName);
 
   const cleanYear = state.settings.academicYear.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`SIGNAL_Jadwal_Sekolah_${cleanYear}.pdf`);
 }
 
-export interface WeeklyClassSchedulePdfOptions {
+export interface WeeklyClassSchedulePdfOptions extends Partial<OfficialDocCustomTexts> {
   orientation?: 'landscape' | 'portrait';
   kopSurat?: boolean;
-  signerCity?: string;
-  signerDate?: string;
-  principalName?: string;
-  principalNip?: string;
+  principalTitle?: string;
   coordinatorTitle?: string;
   coordinatorName?: string;
   coordinatorNip?: string;
   includeTeacherRecapPage?: boolean;
+  colorizeSubjects?: boolean;
+  compactNames?: boolean;
 }
 
 /**
@@ -247,6 +552,8 @@ function renderClassWeeklyPages(
   const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
   const periodMinutes = state.settings.periodMinutes ?? 40;
   const astro = jpToAstronomical(classEntries.length, periodMinutes);
+  const colorize = options?.colorizeSubjects !== false;
+  const compact = options?.compactNames !== false;
 
   const teacherIdsInClass = [...new Set(classEntries.map((e) => e.teacherId))];
   const subjectIdsInClass = [...new Set(classEntries.map((e) => e.subjectId))];
@@ -257,60 +564,28 @@ function renderClassWeeklyPages(
   let currentY = 12;
 
   if (options?.kopSurat !== false) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(15, 35, 33);
-    doc.text('KEMENTERIAN AGAMA REPUBLIK INDONESIA', pageWidth / 2, currentY, { align: 'center' });
-
-    currentY += 4.5;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
-    doc.setTextColor(25, 45, 43);
-    doc.text('KANTOR KEMENTERIAN AGAMA KABUPATEN / KOTA', pageWidth / 2, currentY, { align: 'center' });
-
-    currentY += 5;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12.5);
-    doc.setTextColor(11, 52, 53);
-    doc.text(`MADRASAH TSANAWIYAH ${state.settings.schoolName.toUpperCase()}`, pageWidth / 2, currentY, { align: 'center' });
-
-    currentY += 4;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(80, 95, 90);
-    doc.text(
-      `Alamat: Kampus Pendidikan Terpadu · T.A. ${state.settings.academicYear} · Semester ${state.settings.semester}`,
-      pageWidth / 2,
-      currentY,
-      { align: 'center' },
-    );
-
-    currentY += 3;
-    doc.setDrawColor(11, 52, 53);
-    doc.setLineWidth(1.2);
-    doc.line(14, currentY, pageWidth - 14, currentY);
-
-    currentY += 1.2;
-    doc.setLineWidth(0.4);
-    doc.line(14, currentY, pageWidth - 14, currentY);
-
-    currentY += 4.5;
+    currentY = renderOfficialKopSurat(doc, state, 10, options, false);
   } else {
     currentY = 16;
   }
 
   // Document Title & Class Subtitle
+  const academicYear = options?.academicYear || state.settings.academicYear;
+  const semester = options?.semester || state.settings.semester;
+  const defaultTitle = `JADWAL PELAJARAN MINGGUAN — KELAS ${cls.name}`;
+  const docTitle = options?.documentTitle ? `${options.documentTitle} — KELAS ${cls.name}` : defaultTitle;
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(17, 45, 42);
-  doc.text(`JADWAL PELAJARAN MINGGUAN — KELAS ${cls.name}`, pageWidth / 2, currentY, { align: 'center' });
+  doc.text(docTitle, pageWidth / 2, currentY, { align: 'center' });
 
   currentY += 4.2;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(80, 95, 90);
   doc.text(
-    `Tingkat ${cls.level} · Tahun Ajaran ${state.settings.academicYear} · Semester ${state.settings.semester}`,
+    `Tingkat ${cls.level} · Tahun Ajaran ${academicYear} · Semester ${semester}`,
     pageWidth / 2,
     currentY,
     { align: 'center' },
@@ -351,24 +626,29 @@ function renderClassWeeklyPages(
   // Timetable Matrix AutoTable
   const tableHeaders = ['Jam / JP', ...activeDays];
   const tableData: string[][] = [];
+  const cellSubjectMap: Record<number, Record<number, string>> = {};
 
-  for (const jp of periods) {
+  for (let jpIdx = 0; jpIdx < periods.length; jpIdx++) {
+    const jp = periods[jpIdx];
     const slot = state.slots.find((s) => s.day === activeDays[0] && s.kind === 'TEACHING' && s.jpNo === jp);
     const timeLabel = slot ? `JP ${jp}\n${slot.start} - ${slot.end}` : `JP ${jp}`;
     const row = [timeLabel];
 
-    for (const day of activeDays) {
+    activeDays.forEach((day, dIdx) => {
       const entry = classEntries.find((e) => e.day === day && e.jpNo === jp);
+      const colIdx = dIdx + 1;
       if (entry) {
         const sub = state.subjects.find((s) => s.id === entry.subjectId);
         const tch = state.teachers.find((t) => t.id === entry.teacherId);
-        const subName = sub?.name ?? 'Mapel';
-        const tchInfo = tch ? (tch.code ? `[${tch.code}] ${tch.name}` : tch.name) : '—';
+        const subName = compact ? compactSubjectName(sub?.name ?? '', sub?.code) : (sub?.name ?? 'Mapel');
+        const tchInfo = tch ? (compact ? `(${compactTeacherName(tch.name, tch.code)})` : (tch.code ? `[${tch.code}] ${tch.name}` : tch.name)) : '—';
         row.push(`${subName}\n${tchInfo}`);
+        if (!cellSubjectMap[jpIdx]) cellSubjectMap[jpIdx] = {};
+        cellSubjectMap[jpIdx][colIdx] = entry.subjectId;
       } else {
         row.push('—');
       }
-    }
+    });
     tableData.push(row);
   }
 
@@ -406,6 +686,20 @@ function renderClassWeeklyPages(
       lineWidth: 0.25,
     },
     columnStyles: colStyles,
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index >= 1) {
+        const subId = cellSubjectMap[data.row.index]?.[data.column.index];
+        if (subId && colorize) {
+          const subject = state.subjects.find((s) => s.id === subId);
+          if (subject?.color) {
+            const { bg, text } = getPrintableCellColor(subject.color);
+            data.cell.styles.fillColor = bg;
+            data.cell.styles.textColor = text;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
+    },
     alternateRowStyles: {
       fillColor: [253, 254, 253],
     },
@@ -446,44 +740,7 @@ function renderClassWeeklyPages(
     let p2Y = 12;
 
     if (options?.kopSurat !== false) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(15, 35, 33);
-      doc.text('KEMENTERIAN AGAMA REPUBLIK INDONESIA', pageWidth / 2, p2Y, { align: 'center' });
-
-      p2Y += 4.5;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(25, 45, 43);
-      doc.text('KANTOR KEMENTERIAN AGAMA KABUPATEN / KOTA', pageWidth / 2, p2Y, { align: 'center' });
-
-      p2Y += 5;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12.5);
-      doc.setTextColor(11, 52, 53);
-      doc.text(`MADRASAH TSANAWIYAH ${state.settings.schoolName.toUpperCase()}`, pageWidth / 2, p2Y, { align: 'center' });
-
-      p2Y += 4;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(80, 95, 90);
-      doc.text(
-        `Alamat: Kampus Pendidikan Terpadu · T.A. ${state.settings.academicYear} · Semester ${state.settings.semester}`,
-        pageWidth / 2,
-        p2Y,
-        { align: 'center' },
-      );
-
-      p2Y += 3;
-      doc.setDrawColor(11, 52, 53);
-      doc.setLineWidth(1.2);
-      doc.line(14, p2Y, pageWidth - 14, p2Y);
-
-      p2Y += 1.2;
-      doc.setLineWidth(0.4);
-      doc.line(14, p2Y, pageWidth - 14, p2Y);
-
-      p2Y += 4.5;
+      p2Y = renderOfficialKopSurat(doc, state, 10, options, false);
     } else {
       p2Y = 16;
     }
@@ -499,7 +756,7 @@ function renderClassWeeklyPages(
     doc.setFontSize(8.5);
     doc.setTextColor(80, 95, 90);
     doc.text(
-      `Lampiran Resmi Jadwal Mingguan Kelas ${cls.name} (Tingkat ${cls.level}) · Semester ${state.settings.semester} T.A. ${state.settings.academicYear}`,
+      `Lampiran Resmi Jadwal Mingguan Kelas ${cls.name} (Tingkat ${cls.level}) · Semester ${semester} T.A. ${academicYear}`,
       pageWidth / 2,
       p2Y,
       { align: 'center' },
@@ -534,7 +791,7 @@ function renderClassWeeklyPages(
 
     p2Y += boxHeight + 4;
 
-    // Build Teacher Recap Breakdown Data
+    // Build Teacher Recap Breakdown Data with Jabatan and NIP
     const teacherDataRows: Array<Array<string | number>> = [];
 
     const teachersInClassObj = teacherIdsInClass
@@ -552,21 +809,24 @@ function renderClassWeeklyPages(
       teachingDays.sort((a, b) => activeDays.indexOf(a) - activeDays.indexOf(b));
       const daysStr = teachingDays.join(', ');
 
-      const tAstro = jpToAstronomical(tEntries.length, periodMinutes);
       const totalSchoolJp = allEntries.filter((e) => e.teacherId === teacher.id).length;
 
       let status = 'Sesuai Kuota';
       if (totalSchoolJp > teacher.maxWeeklyJP) status = 'Melebihi Batas';
       else if (totalSchoolJp === teacher.maxWeeklyJP) status = 'Maksimal';
 
+      const teacherDisplayName = teacher.nip
+        ? `${teacher.name}\nNIP. ${teacher.nip}`
+        : teacher.name;
+
       teacherDataRows.push([
         idx + 1,
         teacher.code,
-        teacher.name,
+        teacherDisplayName,
+        teacher.roleTitle || 'Guru Mapel',
         taughtSubjectNames,
         daysStr,
         `${tEntries.length} JP`,
-        `${tAstro.hours}j (${tAstro.minutes}m)`,
         `${totalSchoolJp} / ${teacher.maxWeeklyJP} JP`,
         status,
       ]);
@@ -577,10 +837,10 @@ function renderClassWeeklyPages(
       '',
       '',
       `TOTAL & RATA-RATA KELAS ${cls.name}`,
+      '—',
       `${subjectIdsInClass.length} Mata Pelajaran`,
       `${activeDays.length} Hari KBM`,
       `${classEntries.length} JP`,
-      `${astro.hours}j (${astro.minutes}m)`,
       '—',
       '100% Terpenuhi',
     ]);
@@ -588,11 +848,11 @@ function renderClassWeeklyPages(
     const p2Headers = [
       'No',
       'Kode',
-      'Nama Lengkap Guru / Pendidik',
+      'Nama & NIP Pendidik',
+      'Jabatan',
       'Mata Pelajaran yang Diampu',
       'Hari Mengajar',
       'Beban Kelas',
-      'Waktu Astronomis',
       'Beban Madrasah',
       'Status Alokasi',
     ];
@@ -605,27 +865,27 @@ function renderClassWeeklyPages(
       headStyles: {
         fillColor: [11, 52, 53],
         textColor: 255,
-        fontSize: 8,
+        fontSize: 7.8,
         fontStyle: 'bold',
         halign: 'center',
         cellPadding: 2.8,
       },
       bodyStyles: {
-        fontSize: 8,
+        fontSize: 7.5,
         halign: 'center',
-        cellPadding: 2.3,
+        cellPadding: 2.2,
         textColor: [20, 35, 33],
       },
       columnStyles: {
-        0: { halign: 'center', cellWidth: 10 },
-        1: { halign: 'center', cellWidth: 15 },
-        2: { halign: 'left', cellWidth: orientation === 'landscape' ? 52 : 38, fontStyle: 'bold' },
-        3: { halign: 'left', cellWidth: orientation === 'landscape' ? 50 : 36 },
-        4: { halign: 'center', cellWidth: orientation === 'landscape' ? 32 : 24 },
-        5: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
-        6: { halign: 'center', cellWidth: orientation === 'landscape' ? 30 : 24 },
-        7: { halign: 'center', cellWidth: orientation === 'landscape' ? 28 : 22 },
-        8: { halign: 'center', cellWidth: orientation === 'landscape' ? 32 : 20 },
+        0: { halign: 'center', cellWidth: 8 },
+        1: { halign: 'center', cellWidth: 14 },
+        2: { halign: 'left', cellWidth: orientation === 'landscape' ? 46 : 34, fontStyle: 'bold' },
+        3: { halign: 'left', cellWidth: orientation === 'landscape' ? 36 : 26 },
+        4: { halign: 'left', cellWidth: orientation === 'landscape' ? 44 : 32 },
+        5: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 20 },
+        6: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
+        7: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 20 },
+        8: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 18 },
       },
       didParseCell: (data) => {
         if (data.row.index === teacherDataRows.length - 1) {
@@ -659,58 +919,16 @@ function renderClassWeeklyPages(
       nextP2Y,
     );
 
-    // Official Signature Block on Page 2
-    let sigY = nextP2Y + 6;
-    if (sigY + 34 > pageHeight - 14) {
-      doc.addPage('a4', orientation);
-      sigY = 22;
-    }
-
-    const signerCity = options?.signerCity || 'Kota Madrasah';
-    const signerDate =
-      options?.signerDate ||
-      new Date().toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      });
-
-    const principalName = options?.principalName || 'Drs. H. M. Zainuddin, M.Pd.I';
-    const principalNip = options?.principalNip || '197405101999031003';
-    const coordinatorTitle = options?.coordinatorTitle || `Wali Kelas ${cls.name} / Koordinator Kurikulum`;
-    const coordinatorName = options?.coordinatorName || 'Ahmad Fauzi, S.Pd.';
-    const coordinatorNip = options?.coordinatorNip || '198204122008011015';
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(23, 54, 55);
-
-    // Left Signer
-    const leftX = 20;
-    doc.text('Mengetahui / Memeriksa,', leftX, sigY);
-    doc.setFont('helvetica', 'bold');
-    doc.text(coordinatorTitle, leftX, sigY + 4.5);
-    doc.setFont('helvetica', 'normal');
-
-    doc.setFont('helvetica', 'bold');
-    doc.text(coordinatorName, leftX, sigY + 23);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.text(`NIP. ${coordinatorNip}`, leftX, sigY + 27);
-
-    // Right Signer
-    const rightX = pageWidth - (orientation === 'landscape' ? 85 : 75);
-    doc.setFontSize(8.5);
-    doc.text(`${signerCity}, ${signerDate}`, rightX, sigY);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Kepala Madrasah ${state.settings.schoolName}`, rightX, sigY + 4.5);
-    doc.setFont('helvetica', 'normal');
-
-    doc.setFont('helvetica', 'bold');
-    doc.text(principalName, rightX, sigY + 23);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.text(`NIP. ${principalNip}`, rightX, sigY + 27);
+    addSignatureBlock(doc, state, nextP2Y + 4, {
+      city: options?.signerCity,
+      date: options?.signerDate,
+      leftTitle: options?.leftTitle || options?.coordinatorTitle || `Wali Kelas ${cls.name} / Koordinator Kurikulum`,
+      leftName: options?.leftName || options?.coordinatorName,
+      leftNip: options?.leftNip || options?.coordinatorNip,
+      rightTitle: options?.rightTitle || `${options?.principalTitle || 'Kepala Madrasah'} ${options?.schoolName || state.settings.schoolName}`,
+      rightName: options?.rightName || options?.principalName,
+      rightNip: options?.rightNip || options?.principalNip,
+    });
   }
 }
 
@@ -730,7 +948,7 @@ export function exportScheduleClassPDF(
 
   renderClassWeeklyPages(doc, state, cls, options, true);
 
-  addDocFooter(doc, state.settings.schoolName);
+  addDocFooter(doc, options?.schoolName || state.settings.schoolName);
 
   const cleanName = cls.name.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`SIGNAL_Jadwal_Mingguan_Kelas_${cleanName}.pdf`);
@@ -753,10 +971,437 @@ export function exportAllClassesWeeklyPDF(
     renderClassWeeklyPages(doc, state, cls, options, idx === 0);
   });
 
-  addDocFooter(doc, state.settings.schoolName);
+  addDocFooter(doc, options?.schoolName || state.settings.schoolName);
 
-  const cleanYear = state.settings.academicYear.replace(/[^a-zA-Z0-9]/g, '_');
+  const cleanYear = (options?.academicYear || state.settings.academicYear).replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`SIGNAL_Jadwal_Mingguan_Semua_Kelas_${cleanYear}.pdf`);
+}
+
+export interface AllClassesSinglePagePdfOptions extends Partial<OfficialDocCustomTexts> {
+  colorizeSubjects?: boolean;
+  compactNames?: boolean;
+  includeKop?: boolean;
+  includeTeacherRecapPage?: boolean;
+  principalTitle?: string;
+  coordinatorTitle?: string;
+  coordinatorName?: string;
+  coordinatorNip?: string;
+}
+
+/**
+ * 2B. Export All Classes in Single Page A4 Landscape + Dedicated Teacher JP Recap Page
+ * - Page 1 (A4 Landscape): Master Timetable containing all classes on 1 page with compact names & colorized subject cells
+ * - Page 2 (A4 Landscape): Comprehensive Teacher JP Allocation Recap Table with Official Signature Block at Footer
+ */
+export function exportAllClassesSinglePageA4PDF(
+  state: AppState,
+  options?: AllClassesSinglePagePdfOptions,
+): void {
+  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const entries = state.draft ?? state.activeSchedule ?? [];
+  const classes = state.classes.filter((c) => c.isActive);
+  const activeDays = state.settings.activeDays;
+  const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
+  const periodMinutes = state.settings.periodMinutes ?? 40;
+  const colorize = options?.colorizeSubjects !== false;
+  const compact = options?.compactNames !== false;
+
+  const academicYear = options?.academicYear || state.settings.academicYear;
+  const semester = options?.semester || state.settings.semester;
+  const schoolName = options?.schoolName || state.settings.schoolName;
+
+  // ==========================================
+  // HALAMAN 1: SEMUA KELAS DALAM 1 HALAMAN A4
+  // ==========================================
+  let currentY = 7;
+  if (options?.includeKop !== false && options?.kopSurat !== false) {
+    currentY = renderOfficialKopSurat(doc, state, 7, options, true);
+  } else {
+    currentY = 12;
+  }
+
+  // Document Heading
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(...TEAL);
+  const docTitle = options?.documentTitle || 'JADWAL PELAJARAN SELURUH KELAS (SATU HALAMAN A4)';
+  doc.text(docTitle.toUpperCase(), pageWidth / 2, currentY, { align: 'center' });
+
+  currentY += 3.8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.2);
+  doc.setTextColor(70, 90, 85);
+  const subHeading = `Tahun Ajaran ${academicYear} · Semester ${semester} · Seluruh Rombel: ${classes.map((c) => c.name).join(', ')} · ${schoolName}`;
+  doc.text(subHeading, pageWidth / 2, currentY, { align: 'center' });
+  currentY += 4;
+
+  // Build the unified table
+  const tableHeaders = ['Hari', 'JP', 'Waktu', ...classes.map((c) => `Kelas ${c.name}`)];
+  const tableData: Array<Array<string | number>> = [];
+  const cellSubjectMap: Record<number, Record<number, string>> = {};
+
+  let currentRowIdx = 0;
+  for (const day of activeDays) {
+    for (const jp of periods) {
+      const slot = state.slots.find((s) => s.day === day && s.kind === 'TEACHING' && s.jpNo === jp);
+      const timeStr = slot ? `${slot.start}-${slot.end}` : '';
+
+      const rowCells: Array<string | number> = [
+        day.toUpperCase(),
+        jp,
+        timeStr,
+      ];
+
+      classes.forEach((cls, cIdx) => {
+        const colIdx = 3 + cIdx;
+        const entry = entries.find((e) => e.classId === cls.id && e.day === day && e.jpNo === jp);
+        if (entry) {
+          const sub = state.subjects.find((s) => s.id === entry.subjectId);
+          const tch = state.teachers.find((t) => t.id === entry.teacherId);
+          const sName = compact ? compactSubjectName(sub?.name ?? '', sub?.code) : (sub?.code ?? sub?.name ?? 'Mapel');
+          const tName = compact ? compactTeacherName(tch?.name ?? '', tch?.code) : (tch?.code ?? tch?.name ?? '—');
+          rowCells.push(`${sName}\n(${tName})`);
+          if (!cellSubjectMap[currentRowIdx]) cellSubjectMap[currentRowIdx] = {};
+          cellSubjectMap[currentRowIdx][colIdx] = entry.subjectId;
+        } else {
+          rowCells.push('—');
+        }
+      });
+
+      tableData.push(rowCells);
+      currentRowIdx++;
+    }
+  }
+
+  // Column width calculations for 297mm width (margin 10mm left, 10mm right = 277mm available)
+  const hariWidth = 16;
+  const jpWidth = 7;
+  const waktuWidth = 17;
+  const fixedWidth = hariWidth + jpWidth + waktuWidth; // 40mm
+  const classColWidth = Math.max(16, (277 - fixedWidth) / (classes.length || 1));
+
+  const colStyles: Record<number, any> = {
+    0: { halign: 'center', cellWidth: hariWidth, fontStyle: 'bold', fillColor: [244, 248, 246] },
+    1: { halign: 'center', cellWidth: jpWidth, fontStyle: 'bold', fillColor: [248, 250, 249] },
+    2: { halign: 'center', cellWidth: waktuWidth, fillColor: [250, 251, 250] },
+  };
+
+  classes.forEach((_, idx) => {
+    colStyles[3 + idx] = { halign: 'center', cellWidth: classColWidth };
+  });
+
+  // Calculate dynamic compact sizing to guarantee 1 page
+  const totalRows = tableData.length;
+  const dynamicFontSize = totalRows > 44 ? 5.8 : totalRows > 36 ? 6.2 : 6.6;
+  const dynamicPadding = totalRows > 44 ? 0.6 : 0.8;
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [tableHeaders],
+    body: tableData,
+    theme: 'grid',
+    pageBreak: 'avoid',
+    headStyles: {
+      fillColor: TEAL,
+      textColor: 255,
+      fontSize: 7,
+      fontStyle: 'bold',
+      halign: 'center',
+      cellPadding: 1.5,
+      lineWidth: 0.2,
+      lineColor: [200, 215, 210],
+    },
+    bodyStyles: {
+      fontSize: dynamicFontSize,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: dynamicPadding,
+      textColor: [20, 35, 33],
+      lineWidth: 0.2,
+      lineColor: [215, 225, 220],
+    },
+    columnStyles: colStyles,
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index >= 3) {
+        const subId = cellSubjectMap[data.row.index]?.[data.column.index];
+        if (subId && colorize) {
+          const subject = state.subjects.find((s) => s.id === subId);
+          if (subject?.color) {
+            const { bg, text } = getPrintableCellColor(subject.color);
+            data.cell.styles.fillColor = bg;
+            data.cell.styles.textColor = text;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
+    },
+    margin: { left: 10, right: 10 },
+  });
+
+  const lastTableP1 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
+  let p1BottomY = Math.min(lastTableP1.finalY + 3, pageHeight - 16);
+
+  // Color Swatch Legend Strip
+  if (colorize && p1BottomY < pageHeight - 12) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6);
+    doc.setTextColor(11, 52, 53);
+    doc.text('LEGENDA WARNA MAPEL:', 10, p1BottomY);
+    p1BottomY += 2.2;
+
+    let curLegendX = 10;
+    const activeSubjects = state.subjects.filter((s) => s.isActive);
+    for (const sub of activeSubjects) {
+      const { bg, text } = getPrintableCellColor(sub.color || '#2f7771');
+      const label = `${sub.code}: ${compactSubjectName(sub.name, sub.code)}`;
+      doc.setFontSize(5.5);
+      doc.setFont('helvetica', 'normal');
+      const textWidth = doc.getTextWidth(label);
+      const pillWidth = textWidth + 5;
+
+      if (curLegendX + pillWidth > pageWidth - 10) {
+        curLegendX = 10;
+        p1BottomY += 3;
+        if (p1BottomY > pageHeight - 6) break;
+      }
+
+      doc.setFillColor(...bg);
+      doc.setDrawColor(...text);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(curLegendX, p1BottomY - 1.8, pillWidth, 2.6, 0.6, 0.6, 'FD');
+
+      doc.setTextColor(...text);
+      doc.text(label, curLegendX + 2.5, p1BottomY);
+      curLegendX += pillWidth + 2.5;
+    }
+  }
+
+  // Notice about Page 2
+  if (p1BottomY + 3.5 < pageHeight - 5) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(90, 110, 105);
+    doc.text(
+      `* Catatan: 1 JP = ${periodMinutes} menit waktu efektif KBM. Lembar rekapitulasi beban mengajar guru & pengesahan resmi tercantum pada Halaman 2.`,
+      10,
+      p1BottomY + 3.5,
+    );
+  }
+
+  // =========================================================================
+  // HALAMAN 2: REKAPITULASI ALOKASI JP & BEBAN MENGAJAR GURU (HALAMAN TERPISAH)
+  // =========================================================================
+  if (options?.includeTeacherRecapPage !== false) {
+    doc.addPage('a4', 'landscape');
+    let p2Y = 8;
+    if (options?.includeKop !== false && options?.kopSurat !== false) {
+      p2Y = renderOfficialKopSurat(doc, state, 8, options, false);
+    } else {
+      p2Y = 14;
+    }
+
+    // Title Page 2
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...TEAL);
+    doc.text('REKAPITULASI ALOKASI JP & BEBAN MENGAJAR GURU (SELURUH KELAS)', pageWidth / 2, p2Y, { align: 'center' });
+
+    p2Y += 4.2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 95, 90);
+    doc.text(
+      `Lampiran Resmi Pengesahan Jadwal Pelajaran · Tahun Ajaran ${academicYear} Semester ${semester} · ${schoolName}`,
+      pageWidth / 2,
+      p2Y,
+      { align: 'center' },
+    );
+
+    p2Y += 5;
+
+    // KPI Summary Bar Page 2
+    const totalSchoolJp = entries.length;
+    const activeTeachers = state.teachers.filter((t) => t.isActive);
+    const astroTotal = jpToAstronomical(totalSchoolJp, periodMinutes);
+    const boxW = (pageWidth - 28) / 4;
+    const boxH = 11;
+
+    const kpisPage2 = [
+      { label: 'TOTAL ALOKASI JP MADRASAH', value: `${totalSchoolJp} Jam Pelajaran` },
+      { label: 'WAKTU EFEKTIF ASTRONOMIS', value: `${astroTotal.hours} Jam (${astroTotal.minutes} Mnt)` },
+      { label: 'JUMLAH TENAGA PENDIDIK', value: `${activeTeachers.length} Guru Aktif` },
+      { label: 'RATA-RATA BEBAN MENGAJAR', value: `${(totalSchoolJp / (activeTeachers.length || 1)).toFixed(1)} JP / Guru` },
+    ];
+
+    kpisPage2.forEach((kpi, kIdx) => {
+      const x = 14 + kIdx * boxW;
+      doc.setFillColor(248, 251, 249);
+      doc.setDrawColor(215, 230, 222);
+      doc.roundedRect(x, p2Y, boxW - 3, boxH, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(80, 105, 95);
+      doc.text(kpi.label, x + (boxW - 3) / 2, p2Y + 3.8, { align: 'center' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(11, 52, 53);
+      doc.text(kpi.value, x + (boxW - 3) / 2, p2Y + 8.5, { align: 'center' });
+    });
+
+    p2Y += boxH + 4;
+
+    // Teacher Recap Table
+    const p2Headers = [
+      'No',
+      'Kode',
+      'Nama & NIP Pendidik',
+      'Jabatan',
+      'Mata Pelajaran yang Diampu',
+      ...classes.map((c) => c.name),
+      'Total JP',
+      'Maks JP',
+      'Jam Astro',
+      'Status Beban',
+    ];
+
+    const p2Rows: Array<Array<string | number>> = [];
+    const classJpTotals: Record<string, number> = {};
+    classes.forEach((c) => { classJpTotals[c.id] = 0; });
+
+    activeTeachers.forEach((t, idx) => {
+      const tEntries = entries.filter((e) => e.teacherId === t.id);
+      const taughtSubjectNames = [...new Set(
+        tEntries.map((e) => {
+          const s = state.subjects.find((sub) => sub.id === e.subjectId);
+          return s ? (compact ? compactSubjectName(s.name, s.code) : s.name) : 'Mapel';
+        }),
+      )].join(', ');
+
+      const classJpCols: number[] = classes.map((c) => {
+        const count = tEntries.filter((e) => e.classId === c.id).length;
+        classJpTotals[c.id] = (classJpTotals[c.id] || 0) + count;
+        return count;
+      });
+
+      const totalTeacherJp = tEntries.length;
+      const tAstro = jpToAstronomical(totalTeacherJp, periodMinutes);
+      let status = 'Sesuai Kuota';
+      if (totalTeacherJp > t.maxWeeklyJP) status = 'Melebihi Batas';
+      else if (totalTeacherJp === t.maxWeeklyJP) status = 'Maksimal';
+
+      const teacherDisplayName = t.nip ? `${t.name}\nNIP. ${t.nip}` : t.name;
+
+      p2Rows.push([
+        idx + 1,
+        t.code,
+        teacherDisplayName,
+        t.roleTitle || 'Guru Mapel',
+        taughtSubjectNames || '—',
+        ...classJpCols.map((jp) => (jp > 0 ? `${jp} JP` : '—')),
+        `${totalTeacherJp} JP`,
+        `${t.maxWeeklyJP} JP`,
+        `${tAstro.hours}j ${tAstro.minutes}m`,
+        status,
+      ]);
+    });
+
+    // Summary Total Row
+    p2Rows.push([
+      '',
+      '',
+      'TOTAL ALOKASI JP KELAS',
+      '—',
+      `${state.subjects.length} Mata Pelajaran`,
+      ...classes.map((c) => `${classJpTotals[c.id] || 0} JP`),
+      `${totalSchoolJp} JP`,
+      '—',
+      `${astroTotal.hours}j ${astroTotal.minutes}m`,
+      '100% Terdistribusi',
+    ]);
+
+    const recapColStyles: Record<number, any> = {
+      0: { halign: 'center', cellWidth: 7 },
+      1: { halign: 'center', cellWidth: 12 },
+      2: { halign: 'left', cellWidth: 42, fontStyle: 'bold' },
+      3: { halign: 'left', cellWidth: 32 },
+      4: { halign: 'left', cellWidth: 38 },
+    };
+
+    let nextCol = 5;
+    classes.forEach(() => {
+      recapColStyles[nextCol] = { halign: 'center', cellWidth: 13 };
+      nextCol++;
+    });
+
+    recapColStyles[nextCol] = { halign: 'center', cellWidth: 16, fontStyle: 'bold' }; // Total JP
+    recapColStyles[nextCol + 1] = { halign: 'center', cellWidth: 14 }; // Maks JP
+    recapColStyles[nextCol + 2] = { halign: 'center', cellWidth: 16 }; // Jam Astro
+    recapColStyles[nextCol + 3] = { halign: 'center', cellWidth: 20 }; // Status
+
+    autoTable(doc, {
+      startY: p2Y,
+      head: [p2Headers],
+      body: p2Rows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: TEAL,
+        textColor: 255,
+        fontSize: 7.2,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 2,
+      },
+      bodyStyles: {
+        fontSize: 6.8,
+        halign: 'center',
+        cellPadding: 1.8,
+        textColor: [20, 35, 33],
+      },
+      columnStyles: recapColStyles,
+      didParseCell: (data) => {
+        if (data.row.index === p2Rows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [232, 244, 238];
+          data.cell.styles.textColor = [11, 52, 53];
+        }
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    const lastTableP2 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
+    let nextP2Y = lastTableP2.finalY + 3;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(90, 105, 100);
+    doc.text(
+      `* Catatan: Beban JP dihitung otomatis berdasarkan alokasi kurikulum madrasah (1 JP = ${periodMinutes} menit).`,
+      10,
+      nextP2Y,
+    );
+
+    // Official Signature Block at Footer of Page 2
+    addSignatureBlock(doc, state, nextP2Y + 2, {
+      city: options?.signerCity,
+      date: options?.signerDate,
+      leftTitle: options?.leftTitle || options?.coordinatorTitle || 'Waka Bidang Kurikulum',
+      leftName: options?.leftName || options?.coordinatorName,
+      leftNip: options?.leftNip || options?.coordinatorNip,
+      rightTitle: options?.rightTitle || `${options?.principalTitle || 'Kepala Madrasah'} ${schoolName}`,
+      rightName: options?.rightName || options?.principalName,
+      rightNip: options?.rightNip || options?.principalNip,
+    });
+  }
+
+  addDocFooter(doc, schoolName);
+
+  const cleanYear = academicYear.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`SIGNAL_Jadwal_Semua_Kelas_Satu_Halaman_${cleanYear}.pdf`);
 }
 
 /**
@@ -772,14 +1417,33 @@ export function exportScheduleTeacherPDF(state: AppState, teacherId: string): vo
   const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
   const astro = jpToAstronomical(entries.length, state.settings.periodMinutes ?? 40);
 
-  addDocHeader(
-    doc,
-    `JADWAL MENGAJAR GURU: ${teacher.name}`,
-    `Kode: ${teacher.code} · Total Beban: ${entries.length} JP (${astro.hours} Jam Astronomis) · Batas: ${teacher.maxWeeklyJP} JP`,
-    state.settings.schoolName,
-    state.settings.academicYear,
-    state.settings.semester,
+  let currentY = renderOfficialKopSurat(doc, state, 10);
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...TEAL);
+  doc.text(`JADWAL MENGAJAR INDIVIDUAL GURU`, pageWidth / 2, currentY, { align: 'center' });
+
+  currentY += 4.5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text(`${teacher.name} (${teacher.code}) — ${teacher.roleTitle || 'Guru Mapel'}`, pageWidth / 2, currentY, { align: 'center' });
+
+  currentY += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  const nipText = teacher.nip ? `NIP. ${teacher.nip} · ` : '';
+  doc.text(
+    `${nipText}Total Beban: ${entries.length} JP (${astro.hours} Jam Astronomis) · Kuota Maksimum: ${teacher.maxWeeklyJP} JP/minggu`,
+    pageWidth / 2,
+    currentY,
+    { align: 'center' },
   );
+
+  currentY += 6;
 
   const tableHeaders = ['Jam / JP', ...activeDays];
   const tableData: string[][] = [];
@@ -803,7 +1467,7 @@ export function exportScheduleTeacherPDF(state: AppState, teacherId: string): vo
   }
 
   autoTable(doc, {
-    startY: 50,
+    startY: currentY,
     head: [tableHeaders],
     body: tableData,
     theme: 'grid',
@@ -871,20 +1535,17 @@ export function exportScheduleTeacherPDF(state: AppState, teacherId: string): vo
   });
 
   const finalTable = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
-  addSignatureBlock(doc, state.settings.schoolName, finalTable.finalY);
+  addSignatureBlock(doc, state, finalTable.finalY);
   addDocFooter(doc, state.settings.schoolName);
 
   const cleanName = teacher.name.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`SIGNAL_Jadwal_Guru_${cleanName}.pdf`);
 }
 
-export interface AttendanceRecapPdfOptions {
+export interface AttendanceRecapPdfOptions extends Partial<OfficialDocCustomTexts> {
   orientation?: 'landscape' | 'portrait';
   kopSurat?: boolean;
-  signerCity?: string;
-  signerDate?: string;
-  principalName?: string;
-  principalNip?: string;
+  principalTitle?: string;
   officerTitle?: string;
   officerName?: string;
   officerNip?: string;
@@ -928,7 +1589,7 @@ function computeEffectiveSchoolDaysInMonth(
 }
 
 /**
- * 4. Export Monthly Teacher Attendance Recap PDF (Formal A4 Layout with Auto Percentage)
+ * 4. Export Monthly Teacher Attendance Recap PDF (Formal A4 Layout with Auto Percentage & Jabatan)
  */
 export function exportAttendanceRecapPDF(
   state: AppState,
@@ -939,7 +1600,6 @@ export function exportAttendanceRecapPDF(
   const orientation = options?.orientation ?? 'landscape';
   const doc = new jsPDF({ orientation, format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
 
   const allTeachers = state.teachers.filter((t) => t.isActive && selectedTeacherIds.includes(t.id));
   const attendanceList = state.attendance ?? [];
@@ -958,71 +1618,35 @@ export function exportAttendanceRecapPDF(
 
   // 1. KOP SURAT RESMI MADRASAH (FORMAL LETTERHEAD)
   if (options?.kopSurat !== false) {
-    // Instansi Pemerintah / Kementerian
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11.5);
-    doc.setTextColor(15, 35, 33);
-    doc.text('KEMENTERIAN AGAMA REPUBLIK INDONESIA', pageWidth / 2, currentY, { align: 'center' });
-
-    currentY += 5;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(25, 45, 43);
-    doc.text('KANTOR KEMENTERIAN AGAMA KABUPATEN / KOTA', pageWidth / 2, currentY, { align: 'center' });
-
-    currentY += 5.5;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(11, 52, 53); // Teal Signature
-    doc.text(`MADRASAH TSANAWIYAH ${state.settings.schoolName.toUpperCase()}`, pageWidth / 2, currentY, { align: 'center' });
-
-    currentY += 4.5;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(80, 95, 90);
-    doc.text(
-      `Alamat: Kampus Pendidikan Madrasah Terpadu No. 01 · NPSN: 20580001 · NSM: 1212350001 · T.A. ${state.settings.academicYear}`,
-      pageWidth / 2,
-      currentY,
-      { align: 'center' },
-    );
-
-    currentY += 3.5;
-    // Official Double Line
-    doc.setDrawColor(11, 52, 53);
-    doc.setLineWidth(1.2);
-    doc.line(14, currentY, pageWidth - 14, currentY);
-
-    currentY += 1.2;
-    doc.setLineWidth(0.4);
-    doc.line(14, currentY, pageWidth - 14, currentY);
-
-    currentY += 5;
+    currentY = renderOfficialKopSurat(doc, state, 10, options, false);
   } else {
-    // Simple Banner Header if Kop Surat disabled
     addDocHeader(
       doc,
-      `REKAPITULASI PRESENSI GURU · BULAN ${monthName.toUpperCase()}`,
+      options?.documentTitle || `REKAPITULASI PRESENSI GURU · BULAN ${monthName.toUpperCase()}`,
       `Daftar kehadiran dan persentase kehadiran otomatis untuk ${allTeachers.length} guru terdaftar`,
-      state.settings.schoolName,
-      state.settings.academicYear,
-      state.settings.semester,
+      options?.schoolName || state.settings.schoolName,
+      options?.academicYear || state.settings.academicYear,
+      options?.semester || state.settings.semester,
     );
     currentY = 48;
   }
 
   // 2. DOCUMENT TITLE & PERIODE
+  const attTitle = options?.documentTitle || 'LAPORAN REKAPITULASI KEHADIRAN GURU BULANAN';
+  const attSemester = options?.semester || state.settings.semester;
+  const attYear = options?.academicYear || state.settings.academicYear;
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(17, 45, 42);
-  doc.text('LAPORAN REKAPITULASI KEHADIRAN GURU BULANAN', pageWidth / 2, currentY, { align: 'center' });
+  doc.text(attTitle, pageWidth / 2, currentY, { align: 'center' });
 
   currentY += 4.5;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(80, 95, 90);
   doc.text(
-    `Bulan: ${monthName.toUpperCase()} · Semester ${state.settings.semester.toUpperCase()} Tahun Ajaran ${state.settings.academicYear}`,
+    `Bulan: ${monthName.toUpperCase()} · Semester ${attSemester.toUpperCase()} Tahun Ajaran ${attYear}`,
     pageWidth / 2,
     currentY,
     { align: 'center' },
@@ -1031,7 +1655,6 @@ export function exportAttendanceRecapPDF(
   currentY += 6;
 
   // 3. STATISTICAL PERFORMANCE SUMMARY BAR (KPI BOX)
-  // Pre-calculate sums for the KPI summary
   let sumHadirAll = 0;
   let sumDinasAll = 0;
   let sumSakitAll = 0;
@@ -1058,22 +1681,24 @@ export function exportAttendanceRecapPDF(
     sumIzinAll += izin;
     sumAlpaAll += alpa;
 
-    // Effective present days = Hadir + Dinas Luar
     const totalPresent = hadir + dinas;
-    // Percentage calculated automatically against official effective school days (HE)
     const rate = Math.min(100, Math.round((totalPresent / (effectiveSchoolDays || 1)) * 100));
     totalPercentSum += rate;
 
-    // Official rating predicate
     let predikat = 'Sangat Baik';
     if (rate < 75) predikat = 'Perlu Pembinaan';
     else if (rate < 85) predikat = 'Cukup';
     else if (rate < 95) predikat = 'Baik';
 
+    const teacherDisplayName = teacher.nip
+      ? `${teacher.name}\nNIP. ${teacher.nip}`
+      : teacher.name;
+
     tableData.push([
       idx + 1,
       teacher.code,
-      teacher.name,
+      teacherDisplayName,
+      teacher.roleTitle || 'Guru Mapel',
       hadir,
       dinas,
       sakit,
@@ -1120,11 +1745,12 @@ export function exportAttendanceRecapPDF(
 
   currentY += boxHeight + 4;
 
-  // 4. FORMAL TABLE WITH AUTOMATIC PERCENTAGE AND RECAP
+  // 4. FORMAL TABLE WITH AUTOMATIC PERCENTAGE AND JABATAN
   const headers = [
     'No',
     'Kode',
-    'Nama Lengkap Guru / Pendidik',
+    'Nama Lengkap & NIP',
+    'Jabatan',
     'Hadir (H)',
     'Dinas (DL)',
     'Sakit (S)',
@@ -1132,7 +1758,7 @@ export function exportAttendanceRecapPDF(
     'Alpa (A)',
     'Total (H+DL)',
     'Target (HE)',
-    '% Kehadiran',
+    '% Hadir',
     'Predikat',
   ];
 
@@ -1141,6 +1767,7 @@ export function exportAttendanceRecapPDF(
     '',
     '',
     'TOTAL & RATA-RATA MADRASAH',
+    '—',
     sumHadirAll,
     sumDinasAll,
     sumSakitAll,
@@ -1158,35 +1785,35 @@ export function exportAttendanceRecapPDF(
     body: tableData,
     theme: 'grid',
     headStyles: {
-      fillColor: [11, 52, 53], // Formal deep teal
+      fillColor: [11, 52, 53],
       textColor: 255,
-      fontSize: 8,
+      fontSize: 7.8,
       fontStyle: 'bold',
       halign: 'center',
       cellPadding: 2.8,
     },
     bodyStyles: {
-      fontSize: 8,
+      fontSize: 7.5,
       halign: 'center',
       cellPadding: 2.2,
       textColor: [20, 35, 33],
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 10 },
-      1: { halign: 'center', cellWidth: 16 },
-      2: { halign: 'left', cellWidth: orientation === 'landscape' ? 64 : 45 },
-      3: { halign: 'center', cellWidth: 16 },
-      4: { halign: 'center', cellWidth: 16 },
+      0: { halign: 'center', cellWidth: 8 },
+      1: { halign: 'center', cellWidth: 14 },
+      2: { halign: 'left', cellWidth: orientation === 'landscape' ? 50 : 36 },
+      3: { halign: 'left', cellWidth: orientation === 'landscape' ? 38 : 28 },
+      4: { halign: 'center', cellWidth: 14 },
       5: { halign: 'center', cellWidth: 14 },
-      6: { halign: 'center', cellWidth: 14 },
-      7: { halign: 'center', cellWidth: 14 },
-      8: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
-      9: { halign: 'center', cellWidth: 18 },
-      10: { halign: 'center', cellWidth: 22, fontStyle: 'bold', fillColor: [240, 248, 243] },
-      11: { halign: 'center', cellWidth: orientation === 'landscape' ? 28 : 22 },
+      6: { halign: 'center', cellWidth: 12 },
+      7: { halign: 'center', cellWidth: 12 },
+      8: { halign: 'center', cellWidth: 12 },
+      9: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
+      10: { halign: 'center', cellWidth: 16 },
+      11: { halign: 'center', cellWidth: 18, fontStyle: 'bold', fillColor: [240, 248, 243] },
+      12: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 20 },
     },
     didParseCell: (data) => {
-      // Highlight bottom summary row
       if (data.row.index === tableData.length - 1) {
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.fillColor = [232, 244, 238];
@@ -1202,7 +1829,7 @@ export function exportAttendanceRecapPDF(
   const lastTable = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
   let nextY = lastTable.finalY + 4;
 
-  // 5. OFFICIAL NOTES & CALCULATION BASIS
+  // 5. OFFICIAL NOTES
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(90, 105, 100);
@@ -1218,61 +1845,20 @@ export function exportAttendanceRecapPDF(
     nextY,
   );
 
-  // 6. FORMAL SIGNATURE BLOCK (PENGESAHAN)
-  let sigY = nextY + 7;
-  if (sigY + 36 > pageHeight - 15) {
-    doc.addPage();
-    sigY = 22;
-  }
-
-  const signerCity = options?.signerCity || 'Madrasah';
-  const signerDate =
-    options?.signerDate ||
-    new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-
-  const principalName = options?.principalName || 'Drs. H. M. Zainuddin, M.Pd.I';
-  const principalNip = options?.principalNip || '197405101999031003';
-  const officerTitle = options?.officerTitle || 'Koordinator Akademik & Kurikulum';
-  const officerName = options?.officerName || 'Ahmad Fauzi, S.Pd.';
-  const officerNip = options?.officerNip || '198204122008011015';
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(23, 54, 55);
-
-  // Left Signer (Koordinator Kurikulum)
-  const leftX = 20;
-  doc.text('Mengetahui / Memeriksa,', leftX, sigY);
-  doc.setFont('helvetica', 'bold');
-  doc.text(officerTitle, leftX, sigY + 4.5);
-  doc.setFont('helvetica', 'normal');
-
-  doc.setFont('helvetica', 'bold');
-  doc.text(officerName, leftX, sigY + 24);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text(`NIP. ${officerNip}`, leftX, sigY + 28);
-
-  // Right Signer (Kepala Madrasah)
-  const rightX = pageWidth - (orientation === 'landscape' ? 85 : 75);
-  doc.setFontSize(8.5);
-  doc.text(`${signerCity}, ${signerDate}`, rightX, sigY);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Kepala Madrasah ${state.settings.schoolName}`, rightX, sigY + 4.5);
-  doc.setFont('helvetica', 'normal');
-
-  doc.setFont('helvetica', 'bold');
-  doc.text(principalName, rightX, sigY + 24);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text(`NIP. ${principalNip}`, rightX, sigY + 28);
+  // 6. FORMAL SIGNATURE BLOCK
+  addSignatureBlock(doc, state, nextY + 4, {
+    city: options?.signerCity,
+    date: options?.signerDate,
+    leftTitle: options?.leftTitle || options?.officerTitle || 'Koordinator Akademik & Kurikulum',
+    leftName: options?.leftName || options?.officerName,
+    leftNip: options?.leftNip || options?.officerNip,
+    rightTitle: options?.rightTitle || `${options?.principalTitle || 'Kepala Madrasah'} ${options?.schoolName || state.settings.schoolName}`,
+    rightName: options?.rightName || options?.principalName,
+    rightNip: options?.rightNip || options?.principalNip,
+  });
 
   // 7. OFFICIAL FOOTER ON ALL PAGES
-  addDocFooter(doc, state.settings.schoolName);
+  addDocFooter(doc, options?.schoolName || state.settings.schoolName);
 
   const cleanMonth = monthName.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`SIGNAL_Rekap_Presensi_Guru_${cleanMonth}.pdf`);

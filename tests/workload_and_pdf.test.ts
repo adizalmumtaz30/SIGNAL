@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoState } from '../src/domain/seed';
 import { buildTimeSlots, jpToAstronomical } from '../src/domain/time';
-import { exportScheduleClassPDF, exportScheduleMasterPDF, exportScheduleTeacherPDF } from '../src/utils/pdfExport';
+import {
+  exportScheduleClassPDF,
+  exportScheduleMasterPDF,
+  exportScheduleTeacherPDF,
+  exportAllClassesSinglePageA4PDF,
+  exportAttendanceRecapPDF,
+} from '../src/utils/pdfExport';
 import type { PeriodDefinition } from '../src/domain/types';
 
 describe('Perhitungan Beban Guru & Waktu Astronomis', () => {
@@ -71,7 +77,7 @@ describe('Pengaturan Jam Kegiatan & Hari Berlaku', () => {
   });
 });
 
-describe('Ekspor PDF Jadwal', () => {
+describe('Ekspor PDF Jadwal & Rekap', () => {
   it('dapat menghasilkan dokumen PDF jadwal induk, per kelas, dan per guru tanpa error', () => {
     const state = createDemoState();
 
@@ -85,6 +91,50 @@ describe('Ekspor PDF Jadwal', () => {
     // Test Teacher PDF
     const firstTeacher = state.teachers[0]!;
     expect(() => exportScheduleTeacherPDF(state, firstTeacher.id)).not.toThrow();
+  });
+
+  it('dapat menghasilkan dokumen Semua Kelas 1 Halaman A4 Landscape dengan pewarnaan sel dan rekap JP guru', () => {
+    const state = createDemoState();
+
+    // Test exportAllClassesSinglePageA4PDF with subject colorization and name compaction enabled
+    expect(() =>
+      exportAllClassesSinglePageA4PDF(state, {
+        colorizeSubjects: true,
+        compactNames: true,
+        kopSurat: true,
+        documentTitle: 'Jadwal 1 Halaman A4 Uji Coba',
+        schoolName: 'Madrasah Model Uji Coba',
+        principalName: 'Drs. H. M. Zainuddin, M.Pd.I.',
+        coordinatorName: 'Ahmad Fauzi, S.Pd.',
+      }),
+    ).not.toThrow();
+
+    // Test exportAllClassesSinglePageA4PDF without colors and compact Kop
+    expect(() =>
+      exportAllClassesSinglePageA4PDF(state, {
+        colorizeSubjects: false,
+        compactNames: false,
+        kopSurat: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it('dapat menghasilkan dokumen Rekapitulasi Presensi Guru dengan kustomisasi teks dokumen resmi', () => {
+    const state = createDemoState();
+    const teacherIds = state.teachers.map((t) => t.id);
+
+    expect(() =>
+      exportAttendanceRecapPDF(state, '2026-10', teacherIds, {
+        orientation: 'landscape',
+        kopSurat: true,
+        documentTitle: 'REKAPITULASI PRESENSI GURU BULAN OKTOBER 2026',
+        schoolName: 'MTs Model Riset',
+        principalName: 'Drs. Kepala Madrasah, M.Pd.',
+        principalNip: '19700101 200003 1 001',
+        officerName: 'Siti Aminah, M.Pd.',
+        officerNip: '19800202 200501 2 002',
+      }),
+    ).not.toThrow();
   });
 });
 

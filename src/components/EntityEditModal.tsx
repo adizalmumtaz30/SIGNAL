@@ -19,6 +19,7 @@ import type {
   Requirement,
 } from '../domain/types';
 import { teachingPeriodsForDay } from '../domain/time';
+import { COMMON_TEACHER_POSITIONS } from '../utils/madrasahLogo';
 
 export type EntityKind = 'class' | 'teacher' | 'subject' | 'requirement';
 
@@ -70,6 +71,8 @@ export function EntityEditModal({
   // Teacher state
   const [teacherName, setTeacherName] = useState('');
   const [teacherCode, setTeacherCode] = useState('');
+  const [teacherRoleTitle, setTeacherRoleTitle] = useState('Guru Mapel');
+  const [teacherNip, setTeacherNip] = useState('');
   const [teacherSubjectIds, setTeacherSubjectIds] = useState<string[]>([]);
   const [teacherMaxJP, setTeacherMaxJP] = useState('24');
   const [teacherIsActive, setTeacherIsActive] = useState(true);
@@ -102,6 +105,8 @@ export function EntityEditModal({
       const item = target.item as Teacher | undefined;
       setTeacherName(item?.name ?? '');
       setTeacherCode(item?.code ?? '');
+      setTeacherRoleTitle(item?.roleTitle ?? 'Guru Mapel');
+      setTeacherNip(item?.nip ?? '');
       setTeacherSubjectIds(item?.subjectIds ?? []);
       setTeacherMaxJP(String(item?.maxWeeklyJP ?? 24));
       setTeacherIsActive(item?.isActive ?? true);
@@ -176,6 +181,8 @@ export function EntityEditModal({
         id: target.item?.id ?? `TCH-${Date.now().toString(36)}`,
         name: trimmed,
         code,
+        roleTitle: teacherRoleTitle.trim() || 'Guru Mapel',
+        nip: teacherNip.trim() || undefined,
         subjectIds: teacherSubjectIds,
         maxWeeklyJP: maxJP,
         isActive: teacherIsActive,
@@ -384,6 +391,53 @@ export function EntityEditModal({
                     value={teacherCode}
                     onChange={(e) => setTeacherCode(e.target.value)}
                   />
+                </div>
+              </div>
+
+              {/* Jabatan Guru (Isi Manual) & NIP */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '12px' }}>
+                <div className="field-group">
+                  <label>Jabatan Guru (Isi Manual)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Waka Kurikulum, Guru Mapel, Guru BK"
+                    value={teacherRoleTitle}
+                    onChange={(e) => setTeacherRoleTitle(e.target.value)}
+                  />
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
+                    {COMMON_TEACHER_POSITIONS.slice(0, 6).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        onClick={() => setTeacherRoleTitle(pos)}
+                        style={{
+                          background: teacherRoleTitle === pos ? '#e0efe7' : '#f4f4f0',
+                          border: `1px solid ${teacherRoleTitle === pos ? '#1f6952' : '#d8dad2'}`,
+                          color: teacherRoleTitle === pos ? '#1f6952' : '#455653',
+                          fontSize: '10px',
+                          padding: '2px 7px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {pos}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="field-group">
+                  <label>NIP / NPK / NUPTK</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 198204122008011015"
+                    value={teacherNip}
+                    onChange={(e) => setTeacherNip(e.target.value)}
+                  />
+                  <small style={{ color: '#7a887b', fontSize: '10.5px' }}>
+                    Dicantumkan pada kolom tanda tangan &amp; rekap PDF resmi.
+                  </small>
                 </div>
               </div>
 

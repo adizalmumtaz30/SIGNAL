@@ -17,6 +17,8 @@ export interface Teacher {
   subjectIds: string[];
   maxWeeklyJP: number;
   isActive: boolean;
+  roleTitle?: string; // Jabatan guru (isi manual, misal: Waka Kurikulum, Guru Mapel, Guru BK, dll)
+  nip?: string; // NIP / NPK / NUPTK
 }
 
 export interface Subject {
@@ -128,6 +130,25 @@ export interface AppSettings {
   periodDefinitions?: PeriodDefinition[];
   searchLimit: number;
   geminiEnabled: boolean;
+
+  // Identitas Madrasah Lengkap & Terintegrasi Dokumen Resmi:
+  ministry?: string; // Kementerian yang menaungi (e.g. "KEMENTERIAN AGAMA REPUBLIK INDONESIA")
+  regionalOffice?: string; // Kantor Wilayah / Kankemenag Kab/Kota
+  address?: string; // Alamat lengkap jalan & nomor
+  city?: string; // Kabupaten / Kota
+  postalCode?: string; // Kode Pos
+  npsn?: string; // Nomor Pokok Sekolah Nasional (8 digit)
+  nsm?: string; // Nomor Statistik Madrasah (12 digit)
+  phone?: string; // No yang bisa dihubungi / WhatsApp / Telepon
+  email?: string; // Email resmi madrasah
+  website?: string; // Situs web resmi madrasah
+  logoUrl?: string; // Data URL logo resmi madrasah (PNG base64)
+  headmasterName?: string; // Nama Kepala Madrasah
+  headmasterNip?: string; // NIP / NPK Kepala Madrasah
+  headmasterTitle?: string; // Jabatan Kepala Madrasah (default: "Kepala Madrasah")
+  curriculumLeaderName?: string; // Nama Waka Kurikulum / Koordinator
+  curriculumLeaderNip?: string; // NIP Waka Kurikulum
+  curriculumLeaderTitle?: string; // Jabatan Koordinator (default: "Waka Bidang Kurikulum")
 }
 
 export type AttendanceStatus = 'HADIR' | 'IZIN' | 'SAKIT' | 'ALPA' | 'DINAS_LUAR';

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, Fragment, type FormEvent, type ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -21,10 +21,12 @@ import {
   Edit2,
   FileCheck2,
   FileSpreadsheet,
+  Filter,
   GraduationCap,
   History,
   Info,
   LayoutDashboard,
+  LayoutGrid,
   LoaderCircle,
   LockKeyhole,
   Menu,
@@ -45,6 +47,8 @@ import {
   WandSparkles,
   X,
   XCircle,
+  Award,
+  RotateCcw,
   type LucideIcon,
 } from 'lucide-react';
 import type {
@@ -81,6 +85,8 @@ import { SchedulePdfExportModal } from './components/SchedulePdfExportModal';
 import { EntityEditModal, type EntityEditTarget } from './components/EntityEditModal';
 import { AiConflictHelper } from './components/AiConflictHelper';
 import { InfoNotice } from './components/InfoNotice';
+import { COMMON_TEACHER_POSITIONS, getDefaultMadrasahLogo, processLogoUpload } from './utils/madrasahLogo';
+import { compactSubjectName, compactTeacherName, getPrintableCellColor } from './utils/pdfExport';
 
 type ScreenId =
   | 'overview'
@@ -116,7 +122,16 @@ type AddType = 'class' | 'teacher' | 'subject' | null;
 interface EditSlotContext { classId: string; day: Day; jpNo: number }
 interface ToastData { message: string; kind: 'success' | 'warning' | 'error' | 'info' }
 
-const emptyMasterForm = { name: '', level: 'VII', code: '', maxWeeklyJP: '24', selectedSubjectIds: [] as string[], color: '#2f7771' };
+const emptyMasterForm = {
+  name: '',
+  level: 'VII',
+  code: '',
+  roleTitle: 'Guru Mapel',
+  nip: '',
+  maxWeeklyJP: '24',
+  selectedSubjectIds: [] as string[],
+  color: '#2f7771',
+};
 const emptyRequirementForm = { classId: '', subjectId: '', teacherId: '', requiredJP: '4' };
 
 function titleForScreen(screen: ScreenId) {
@@ -506,9 +521,18 @@ export default function App() {
       notify(`Kelas ${name} ditambahkan.`);
     } else if (addType === 'teacher') {
       if (!masterForm.selectedSubjectIds.length) { notify('Pilih minimal satu kualifikasi mapel.', 'warning'); return; }
-      const teacher: Teacher = { id: `TCH-${Date.now().toString(36)}`, code: masterForm.code.trim() || `T-${workspace.teachers.length + 1}`, name: masterForm.name.trim(), subjectIds: masterForm.selectedSubjectIds, maxWeeklyJP: Math.max(1, Number(masterForm.maxWeeklyJP) || 24), isActive: true };
+      const teacher: Teacher = {
+        id: `TCH-${Date.now().toString(36)}`,
+        code: masterForm.code.trim() || `T-${workspace.teachers.length + 1}`,
+        name: masterForm.name.trim(),
+        roleTitle: masterForm.roleTitle.trim() || 'Guru Mapel',
+        nip: masterForm.nip.trim() || undefined,
+        subjectIds: masterForm.selectedSubjectIds,
+        maxWeeklyJP: Math.max(1, Number(masterForm.maxWeeklyJP) || 24),
+        isActive: true,
+      };
       updateWorkspace((current) => ({ ...current, teachers: [...current.teachers, teacher] }), true);
-      notify(`Guru ${teacher.name} ditambahkan.`);
+      notify(`Guru ${teacher.name} (${teacher.roleTitle}) ditambahkan.`);
     } else {
       const name = masterForm.name.trim();
       if (workspace.subjects.some((item) => item.name.toLowerCase() === name.toLowerCase())) { notify('Nama mapel sudah ada.', 'warning'); return; }
@@ -1453,19 +1477,37 @@ function ScheduleScreen({
   const [draggedSlot, setDraggedSlot] = useState<{ classId: string; day: Day; jpNo: number } | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<{ day: Day; jpNo: number } | null>(null);
 
+  // View mode switcher: 'all' (Matriks Seluruh Kelas) vs 'single' (Editor Per-Kelas)
+  const [viewMode, setViewMode] = useState<'all' | 'single'>('all');
+  const [filterDay, setFilterDay] = useState<string>('all');
+  const [filterTeacherId, setFilterTeacherId] = useState<string>('');
+  const [filterSubjectId, setFilterSubjectId] = useState<string>('');
+  const [colorizeCells, setColorizeCells] = useState<boolean>(true);
+  const [compactLabels, setCompactLabels] = useState<boolean>(true);
+
   const hasEntries = !!(state.draft?.length || state.activeSchedule?.length);
   const activeDays = state.settings.activeDays;
   const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
   const published = !state.draft && !!state.activeSchedule?.length;
+  const activeClasses = useMemo(() => state.classes.filter((c) => c.isActive), [state.classes]);
+  const activeTeachers = useMemo(() => state.teachers.filter((t) => t.isActive), [state.teachers]);
+
+  const scheduleEntries = state.draft ?? state.activeSchedule ?? [];
+  const periodMinutes = state.settings.periodMinutes ?? 40;
+  const totalAllocatedJp = scheduleEntries.length;
+  const totalAstroHours = ((totalAllocatedJp * periodMinutes) / 60).toFixed(1);
+  const targetRequiredJp = state.requirements.reduce((sum, r) => sum + r.requiredJP, 0);
+
+  const displayedDays = filterDay === 'all' ? activeDays : [filterDay as Day];
 
   return (
     <>
       <PageHeading
         kicker="SCHEDULE WORKSPACE"
         title="Jadwal Pelajaran"
-        description="Geser dan letakkan (Drag & Drop) pelajaran antar-slot. Validator deterministik otomatis memeriksa bentrok."
+        description="Tinjau matriks jadwal seluruh madrasah sekaligus atau kelola detail alokasi per kelas dengan validator deterministik."
         actions={
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {lastMove && (
               <Button variant="secondary" icon={Undo2} onClick={onUndoMove} title="Batalkan perpindahan terakhir">
                 Urungkan
@@ -1484,27 +1526,54 @@ function ScheduleScreen({
         }
       />
 
-      {/* Toolbar */}
-      <div className="toolbar-card">
-        <div className="class-selector-wrap">
-          <label htmlFor="schedule-class">PILIH KELAS</label>
-          <div className="select-with-icon">
-            <GraduationCap size={16} />
-            <select
-              id="schedule-class"
-              value={selectedClass}
-              onChange={(e) => onSelectClass(e.target.value)}
-            >
-              <option value="">Pilih kelas</option>
-              {state.classes.filter((item) => item.isActive).map((item) => (
-                <option key={item.id} value={item.id}>
-                  Kelas {item.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} />
-          </div>
+      {/* Main Mode Switcher & Global Toolbar */}
+      <div className="toolbar-card" style={{ flexWrap: 'wrap', gap: '12px' }}>
+        {/* View Switcher Segmented Control */}
+        <div className="schedule-view-switcher">
+          <button
+            type="button"
+            className={`view-switch-btn ${viewMode === 'all' ? 'active' : ''}`}
+            onClick={() => setViewMode('all')}
+            title="Tampilan matriks terpadu semua kelas dalam satu layar"
+          >
+            <LayoutGrid size={15} />
+            <span>Matriks Seluruh Kelas</span>
+          </button>
+          <button
+            type="button"
+            className={`view-switch-btn ${viewMode === 'single' ? 'active' : ''}`}
+            onClick={() => setViewMode('single')}
+            title="Tampilan detail per kelas dengan drag-and-drop"
+          >
+            <GraduationCap size={15} />
+            <span>Editor Per-Kelas</span>
+          </button>
         </div>
+
+        {viewMode === 'single' && (
+          <>
+            <div className="toolbar-divider" />
+            <div className="class-selector-wrap">
+              <label htmlFor="schedule-class">PILIH KELAS</label>
+              <div className="select-with-icon">
+                <GraduationCap size={16} />
+                <select
+                  id="schedule-class"
+                  value={selectedClass}
+                  onChange={(e) => onSelectClass(e.target.value)}
+                >
+                  <option value="">Pilih kelas</option>
+                  {activeClasses.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      Kelas {item.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} />
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="toolbar-divider" />
 
@@ -1512,7 +1581,7 @@ function ScheduleScreen({
           <span className="toolbar-label">STATUS JADWAL</span>
           {state.draft ? (
             <StatusPill status={report.valid ? 'success' : 'warning'}>
-              {report.valid ? 'Draft Valid' : 'Draft Perlu Diperbaiki'}
+              {report.valid ? 'Draft Valid' : `${report.hardErrorCount} Bentrok Perlu Diperbaiki`}
             </StatusPill>
           ) : published ? (
             <StatusPill status="success">
@@ -1535,150 +1604,479 @@ function ScheduleScreen({
         </div>
       </div>
 
-      {!selectedClass ? (
-        <EmptyState
-          icon={GraduationCap}
-          title="Pilih kelas untuk melihat jadwal"
-          description="Pilih kelas melalui dropdown di atas atau tambahkan kelas baru pada Data Master."
-          action={<Button onClick={() => onNavigate('master')}>Buka Data Master</Button>}
-        />
-      ) : (
-        <>
-          <div className="schedule-summary-row">
-            <div className="schedule-selected-class">
-              <div className="class-monogram">{getClass(state, selectedClass)?.name.slice(0, 2)}</div>
-              <div>
-                <strong>Kelas {getClass(state, selectedClass)?.name}</strong>
-                <span>{state.settings.schoolName} · T.A. {state.settings.academicYear} ({state.settings.semester})</span>
+      {/* ========================================================================= */}
+      {/* MODE 1: MATRIKS SELURUH KELAS TERPADU (MEMPERMUDAH MELIHAT SELURUH KELAS) */}
+      {/* ========================================================================= */}
+      {viewMode === 'all' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Quick Metrics Bar Across All Classes */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            <div className="surface-card" style={{ padding: '12px 16px' }}>
+              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
+                TOTAL KELAS AKTIF
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+                <strong style={{ fontSize: '20px', color: '#173637' }}>{activeClasses.length}</strong>
+                <span style={{ fontSize: '11px', color: '#687a75' }}>Rombel Belajar</span>
               </div>
             </div>
-            <div className="schedule-summary-metric">
-              <span>Alokasi terisi</span>
-              <strong>
-                {(state.draft ?? state.activeSchedule ?? []).filter((e) => e.classId === selectedClass).length} <small>JP</small>
-              </strong>
+
+            <div className="surface-card" style={{ padding: '12px 16px' }}>
+              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
+                ALOKASI KBM TERJADWAL
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+                <strong style={{ fontSize: '20px', color: '#1f6952' }}>{totalAllocatedJp}</strong>
+                <span style={{ fontSize: '11px', color: '#687a75' }}>
+                  / {targetRequiredJp > 0 ? targetRequiredJp : totalAllocatedJp} JP ({totalAstroHours} Jam Efektif)
+                </span>
+              </div>
             </div>
-            <div className="schedule-summary-metric">
-              <span>Target Kebutuhan</span>
-              <strong>
-                {state.requirements.filter((item) => item.classId === selectedClass).reduce((sum, item) => sum + item.requiredJP, 0)} <small>JP</small>
-              </strong>
+
+            <div className="surface-card" style={{ padding: '12px 16px' }}>
+              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
+                GURU BERTUGAS
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+                <strong style={{ fontSize: '20px', color: '#173637' }}>{activeTeachers.length}</strong>
+                <span style={{ fontSize: '11px', color: '#687a75' }}>Pendidik Terjadwal</span>
+              </div>
             </div>
-            <div className="schedule-summary-metric">
-              <span>Hari Aktif</span>
-              <strong>{activeDays.length} <small>hari</small></strong>
+
+            <div className="surface-card" style={{ padding: '12px 16px' }}>
+              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
+                KUALITAS DISTRIBUSI
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+                <strong
+                  style={{
+                    fontSize: '20px',
+                    color: report.valid ? '#1f6952' : '#b24c3d',
+                  }}
+                >
+                  {report.valid ? '100% Bebas Bentrok' : `${report.hardErrorCount} Konflik`}
+                </strong>
+              </div>
             </div>
           </div>
 
-          {/* Interactive Drag-and-Drop Schedule Table */}
-          <div className="schedule-table-wrap">
-            <table className="schedule-table">
+          {/* Master Toolbar with Filters & View Toggles */}
+          <div className="master-toolbar">
+            <div className="master-toolbar-row1">
+              {/* Day Filter Pills */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#31544d', letterSpacing: '0.05em' }}>
+                  FILTER HARI:
+                </span>
+                <div className="master-day-pills">
+                  <button
+                    type="button"
+                    className={`day-pill ${filterDay === 'all' ? 'active' : ''}`}
+                    onClick={() => setFilterDay('all')}
+                  >
+                    Semua Hari ({activeDays.length})
+                  </button>
+                  {activeDays.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      className={`day-pill ${filterDay === day ? 'active' : ''}`}
+                      onClick={() => setFilterDay(day)}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Direct Print Button */}
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={onOpenPdfModal}
+                style={{ height: '34px', fontSize: '12px', gap: '6px' }}
+                title="Cetak jadwal seluruh kelas dalam 1 lembar A4 landscape resmi"
+              >
+                <Download size={15} />
+                <span>Cetak / Ekspor PDF 1 Halaman A4</span>
+              </button>
+            </div>
+
+            <div className="master-toolbar-row2">
+              <div className="master-filter-inputs">
+                {/* Teacher Highlighter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Filter size={13} style={{ color: '#52776d' }} />
+                  <select
+                    className="master-filter-select"
+                    value={filterTeacherId}
+                    onChange={(e) => setFilterTeacherId(e.target.value)}
+                  >
+                    <option value="">Sorot Semua Guru</option>
+                    {activeTeachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Subject Highlighter */}
+                <select
+                  className="master-filter-select"
+                  value={filterSubjectId}
+                  onChange={(e) => setFilterSubjectId(e.target.value)}
+                >
+                  <option value="">Sorot Semua Mapel</option>
+                  {state.subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                </select>
+
+                {(filterTeacherId || filterSubjectId) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterTeacherId('');
+                      setFilterSubjectId('');
+                    }}
+                    style={{
+                      border: 0,
+                      background: 'transparent',
+                      color: '#b24c3d',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Reset Sorotan
+                  </button>
+                )}
+              </div>
+
+              {/* Toggles */}
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <label className="master-toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={colorizeCells}
+                    onChange={(e) => setColorizeCells(e.target.checked)}
+                  />
+                  <span>Warna Mapel</span>
+                </label>
+                <label className="master-toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={compactLabels}
+                    onChange={(e) => setCompactLabels(e.target.checked)}
+                  />
+                  <span>Singkat Nama</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Master Timetable Matrix Grid */}
+          <div className="master-matrix-table-wrap">
+            <table className="master-matrix-table">
               <thead>
                 <tr>
-                  <th className="schedule-time-column">JAM / JP KBM</th>
-                  {activeDays.map((day) => (
-                    <th key={day}>
-                      <span>{day}</span>
-                      <small>{day === 'Jumat' ? 'JUMAT BERKAH' : day.slice(0, 3).toUpperCase()}</small>
+                  <th>HARI / JP KBM</th>
+                  {activeClasses.map((cls) => (
+                    <th key={cls.id}>
+                      <div>Kelas {cls.name}</div>
+                      <small style={{ color: '#55776d', fontWeight: 600, display: 'block', marginTop: '2px' }}>
+                        Tingkat {cls.level}
+                      </small>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {periods.map((jpNo) => (
-                  <tr key={jpNo}>
-                    <th className="period-heading">
-                      <span>JP {String(jpNo).padStart(2, '0')}</span>
-                      <small>
-                        {state.slots.find((slot) => slot.kind === 'TEACHING' && slot.day === activeDays[0] && slot.jpNo === jpNo)?.start ?? '—'}
-                      </small>
-                    </th>
-                    {activeDays.map((day) => {
-                      const entry = getEntry(state, selectedClass, day, jpNo);
-                      const subject = entry ? getSubject(state, entry.subjectId) : undefined;
-                      const teacher = entry ? getTeacher(state, entry.teacherId) : undefined;
+                {displayedDays.map((day) => (
+                  <Fragment key={day}>
+                    {/* Day Group Section Row */}
+                    <tr className="master-day-section-row">
+                      <td colSpan={activeClasses.length + 1}>
+                        <span>
+                          📅 <strong>HARI {day.toUpperCase()}</strong> · {teachingPeriodsForDay(state.slots, day).length} Jam Pelajaran Efektif KBM
+                        </span>
+                      </td>
+                    </tr>
 
-                      // Check if slot is blocked by non-KBM activity
+                    {/* Periods under this day */}
+                    {periods.map((jpNo) => {
                       const slotDef = state.slots.find((s) => s.day === day && s.kind === 'TEACHING' && s.jpNo === jpNo);
-                      const blocked = isSlotBlocked(slotDef);
-                      const isOver = dragOverTarget?.day === day && dragOverTarget?.jpNo === jpNo;
+                      const isBlocked = isSlotBlocked(slotDef);
+                      const timeStr = slotDef ? `${slotDef.start} - ${slotDef.end}` : `JP ${jpNo}`;
 
                       return (
-                        <td
-                          key={`${day}-${jpNo}`}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            setDragOverTarget({ day, jpNo });
-                          }}
-                          onDragLeave={() => {
-                            if (dragOverTarget?.day === day && dragOverTarget?.jpNo === jpNo) {
-                              setDragOverTarget(null);
+                        <tr key={`${day}-${jpNo}`}>
+                          <th className="master-jp-th">
+                            <strong>JP {String(jpNo).padStart(2, '0')}</strong>
+                            <small>{timeStr}</small>
+                          </th>
+
+                          {activeClasses.map((cls) => {
+                            if (isBlocked) {
+                              return (
+                                <td key={cls.id} className="master-cell-td">
+                                  <div className="master-blocked-slot" title={`Kegiatan: ${slotDef?.activityName || slotDef?.activityType || 'Non-KBM'}`}>
+                                    {slotDef?.activityName || slotDef?.activityType || 'ISTIRAHAT'}
+                                  </div>
+                                </td>
+                              );
                             }
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            setDragOverTarget(null);
-                            if (draggedSlot) {
-                              onDropSlot(draggedSlot, { day, jpNo });
-                              setDraggedSlot(null);
+
+                            const entry = getEntry(state, cls.id, day, jpNo);
+                            if (!entry) {
+                              return (
+                                <td key={cls.id} className="master-cell-td">
+                                  <button
+                                    type="button"
+                                    className="master-empty-slot"
+                                    onClick={() => onEditSlot(cls.id, day, jpNo)}
+                                    title={`Klik untuk mengisi jadwal Kelas ${cls.name} pada ${day}, JP ${jpNo}`}
+                                  >
+                                    + Isi
+                                  </button>
+                                </td>
+                              );
                             }
-                          }}
-                          style={{
-                            background: isOver ? 'rgba(36, 99, 94, 0.12)' : undefined,
-                            outline: isOver ? '2px dashed #24635e' : undefined,
-                          }}
-                        >
-                          <button
-                            draggable={!!entry}
-                            onDragStart={() => {
-                              if (entry) {
-                                setDraggedSlot({ classId: selectedClass, day, jpNo });
-                              }
-                            }}
-                            className={`schedule-cell ${entry ? 'has-entry' : 'is-empty'} ${blocked ? 'is-blocked' : ''}`}
-                            style={entry && subject ? ({ '--subject-color': subject.color } as React.CSSProperties) : undefined}
-                            onClick={() => onEditSlot(selectedClass, day, jpNo)}
-                            title={
-                              blocked
-                                ? 'Slot diblokir untuk kegiatan non-KBM'
-                                : entry
-                                ? `Tarik untuk memindahkan: ${subject?.name} (${teacher?.name})`
-                                : `Klik untuk menambah pelajaran pada ${day}, JP ${jpNo}`
+
+                            const subject = getSubject(state, entry.subjectId);
+                            const teacher = getTeacher(state, entry.teacherId);
+
+                            const isHighlighted =
+                              (filterTeacherId && entry.teacherId === filterTeacherId) ||
+                              (filterSubjectId && entry.subjectId === filterSubjectId);
+
+                            // Printable cell color blending
+                            let cellBg = '#f5f9f6';
+                            let cellBorder = '#d7e2da';
+                            let cellText = '#173637';
+
+                            if (colorizeCells && subject?.color) {
+                              const { bg, text } = getPrintableCellColor(subject.color);
+                              cellBg = `rgb(${bg.join(',')})`;
+                              cellBorder = `rgb(${text.map((v) => Math.min(220, v + 80)).join(',')})`;
+                              cellText = `rgb(${text.join(',')})`;
                             }
-                          >
-                            <span className="cell-time">{entry ? subject?.code ?? 'MAPEL' : blocked ? 'BLOCKED' : '+ ADD'}</span>
-                            {entry ? (
-                              <>
-                                <strong>{subject?.name ?? 'Mapel'}</strong>
-                                <small>{teacher?.name ?? 'Guru belum tersedia'}</small>
-                                <span className="cell-foot">
-                                  <i /> {teacher?.code ?? '—'}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="empty-cell-hint">
-                                {blocked ? 'Kegiatan Terjadwal' : 'Tambah pelajaran'}
-                              </span>
-                            )}
-                          </button>
-                        </td>
+
+                            const subjLabel = compactLabels
+                              ? compactSubjectName(subject?.name || '', subject?.code)
+                              : subject?.name || 'Mapel';
+
+                            const teacherLabel = compactLabels
+                              ? compactTeacherName(teacher?.name || '', teacher?.code)
+                              : teacher?.name || '—';
+
+                            return (
+                              <td key={cls.id} className="master-cell-td">
+                                <button
+                                  type="button"
+                                  className={`master-slot-btn ${isHighlighted ? 'is-highlighted' : ''}`}
+                                  onClick={() => onEditSlot(cls.id, day, jpNo)}
+                                  style={{
+                                    background: cellBg,
+                                    borderColor: isHighlighted ? '#bc945e' : cellBorder,
+                                    color: cellText,
+                                  }}
+                                  title={`${subject?.name || 'Mapel'} (${teacher?.name || 'Guru'})\nKelas ${cls.name} · ${day}, JP ${jpNo} (${timeStr})\nKlik untuk mengedit atau memindahkan alokasi`}
+                                >
+                                  <div className="master-slot-subject">{subjLabel}</div>
+                                  <div className="master-slot-teacher">{teacherLabel}</div>
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
                       );
                     })}
-                  </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <div className="schedule-legend-row">
-            <span><i className="legend-dot dot-teal" /> Mapel terisi (Dapat digeser/drag)</span>
-            <span><i className="legend-dot dot-ivory" /> Slot KBM kosong</span>
-            <span><ShieldCheck size={14} /> Klik untuk edit manual</span>
+          {/* Master View Legend */}
+          <div className="schedule-legend-row" style={{ marginTop: '8px' }}>
+            <span>
+              <i className="legend-dot dot-teal" /> Sel KBM berwarna (Klik untuk edit pelajaran / guru)
+            </span>
+            <span>
+              <i className="legend-dot dot-ivory" /> Sel kosong (+ Isi KBM)
+            </span>
+            <span style={{ color: '#bc945e', fontWeight: 700 }}>
+              💡 Sorot guru atau mapel pada dropdown untuk melihat sebaran mengajar secara visual
+            </span>
             <span className="legend-spacer" />
             <button className="text-link" onClick={onOpenValidationModal}>
-              Laporan Validasi Lengkap <ArrowRight size={13} />
+              Laporan Konflik &amp; Validasi Lengkap <ArrowRight size={13} />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODE 2: EDITOR DETAIL PER-KELAS (DRAG & DROP ANTAR-SLOT)                  */}
+      {/* ========================================================================= */}
+      {viewMode === 'single' && (
+        <>
+          {!selectedClass ? (
+            <EmptyState
+              icon={GraduationCap}
+              title="Pilih kelas untuk melihat jadwal"
+              description="Pilih kelas melalui dropdown di atas atau tambahkan kelas baru pada Data Master."
+              action={<Button onClick={() => onNavigate('master')}>Buka Data Master</Button>}
+            />
+          ) : (
+            <>
+              <div className="schedule-summary-row">
+                <div className="schedule-selected-class">
+                  <div className="class-monogram">{getClass(state, selectedClass)?.name.slice(0, 2)}</div>
+                  <div>
+                    <strong>Kelas {getClass(state, selectedClass)?.name}</strong>
+                    <span>{state.settings.schoolName} · T.A. {state.settings.academicYear} ({state.settings.semester})</span>
+                  </div>
+                </div>
+                <div className="schedule-summary-metric">
+                  <span>Alokasi terisi</span>
+                  <strong>
+                    {(state.draft ?? state.activeSchedule ?? []).filter((e) => e.classId === selectedClass).length} <small>JP</small>
+                  </strong>
+                </div>
+                <div className="schedule-summary-metric">
+                  <span>Target Kebutuhan</span>
+                  <strong>
+                    {state.requirements.filter((item) => item.classId === selectedClass).reduce((sum, item) => sum + item.requiredJP, 0)} <small>JP</small>
+                  </strong>
+                </div>
+                <div className="schedule-summary-metric">
+                  <span>Hari Aktif</span>
+                  <strong>{activeDays.length} <small>hari</small></strong>
+                </div>
+              </div>
+
+              {/* Interactive Drag-and-Drop Schedule Table */}
+              <div className="schedule-table-wrap">
+                <table className="schedule-table">
+                  <thead>
+                    <tr>
+                      <th className="schedule-time-column">JAM / JP KBM</th>
+                      {activeDays.map((day) => (
+                        <th key={day}>
+                          <span>{day}</span>
+                          <small>{day === 'Jumat' ? 'JUMAT BERKAH' : day.slice(0, 3).toUpperCase()}</small>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {periods.map((jpNo) => (
+                      <tr key={jpNo}>
+                        <th className="period-heading">
+                          <span>JP {String(jpNo).padStart(2, '0')}</span>
+                          <small>
+                            {state.slots.find((slot) => slot.kind === 'TEACHING' && slot.day === activeDays[0] && slot.jpNo === jpNo)?.start ?? '—'}
+                          </small>
+                        </th>
+                        {activeDays.map((day) => {
+                          const entry = getEntry(state, selectedClass, day, jpNo);
+                          const subject = entry ? getSubject(state, entry.subjectId) : undefined;
+                          const teacher = entry ? getTeacher(state, entry.teacherId) : undefined;
+
+                          // Check if slot is blocked by non-KBM activity
+                          const slotDef = state.slots.find((s) => s.day === day && s.kind === 'TEACHING' && s.jpNo === jpNo);
+                          const blocked = isSlotBlocked(slotDef);
+                          const isOver = dragOverTarget?.day === day && dragOverTarget?.jpNo === jpNo;
+
+                          return (
+                            <td
+                              key={`${day}-${jpNo}`}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDragOverTarget({ day, jpNo });
+                              }}
+                              onDragLeave={() => {
+                                if (dragOverTarget?.day === day && dragOverTarget?.jpNo === jpNo) {
+                                  setDragOverTarget(null);
+                                }
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                setDragOverTarget(null);
+                                if (draggedSlot) {
+                                  onDropSlot(draggedSlot, { day, jpNo });
+                                  setDraggedSlot(null);
+                                }
+                              }}
+                              style={{
+                                background: isOver ? 'rgba(36, 99, 94, 0.12)' : undefined,
+                                outline: isOver ? '2px dashed #24635e' : undefined,
+                              }}
+                            >
+                              <button
+                                draggable={!!entry}
+                                onDragStart={() => {
+                                  if (entry) {
+                                    setDraggedSlot({ classId: selectedClass, day, jpNo });
+                                  }
+                                }}
+                                className={`schedule-cell ${entry ? 'has-entry' : 'is-empty'} ${blocked ? 'is-blocked' : ''}`}
+                                style={entry && subject ? ({ '--subject-color': subject.color } as React.CSSProperties) : undefined}
+                                onClick={() => onEditSlot(selectedClass, day, jpNo)}
+                                title={
+                                  blocked
+                                    ? 'Slot diblokir untuk kegiatan non-KBM'
+                                    : entry
+                                    ? `Tarik untuk memindahkan: ${subject?.name} (${teacher?.name})`
+                                    : `Klik untuk menambah pelajaran pada ${day}, JP ${jpNo}`
+                                }
+                              >
+                                <span className="cell-time">{entry ? subject?.code ?? 'MAPEL' : blocked ? 'BLOCKED' : '+ ADD'}</span>
+                                {entry ? (
+                                  <>
+                                    <strong>{subject?.name ?? 'Mapel'}</strong>
+                                    <small>{teacher?.name ?? 'Guru belum tersedia'}</small>
+                                    <span className="cell-foot">
+                                      <i /> {teacher?.code ?? '—'}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="empty-cell-hint">
+                                    {blocked ? 'Kegiatan Terjadwal' : 'Tambah pelajaran'}
+                                  </span>
+                                )}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="schedule-legend-row">
+                <span><i className="legend-dot dot-teal" /> Mapel terisi (Dapat digeser/drag)</span>
+                <span><i className="legend-dot dot-ivory" /> Slot KBM kosong</span>
+                <span><ShieldCheck size={14} /> Klik untuk edit manual</span>
+                <span className="legend-spacer" />
+                <button className="text-link" onClick={onOpenValidationModal}>
+                  Laporan Validasi Lengkap <ArrowRight size={13} />
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
     </>
@@ -1709,6 +2107,28 @@ function SettingsScreen({
   const [activeDays, setActiveDays] = useState<Day[]>(state.settings.activeDays);
   const [geminiEnabled, setGeminiEnabled] = useState(state.settings.geminiEnabled);
   const [previewDay, setPreviewDay] = useState<Day>(state.settings.activeDays[0] || 'Senin');
+
+  // Madrasah Profile & Document Integration
+  const [ministry, setMinistry] = useState(state.settings.ministry ?? 'KEMENTERIAN AGAMA REPUBLIK INDONESIA');
+  const [regionalOffice, setRegionalOffice] = useState(state.settings.regionalOffice ?? 'KANTOR KEMENTERIAN AGAMA KABUPATEN MALANG');
+  const [address, setAddress] = useState(state.settings.address ?? 'Jl. Raya Cendekia No. 45, Sumberpucung');
+  const [city, setCity] = useState(state.settings.city ?? 'Kabupaten Malang');
+  const [postalCode, setPostalCode] = useState(state.settings.postalCode ?? '65165');
+  const [npsn, setNpsn] = useState(state.settings.npsn ?? '20580001');
+  const [nsm, setNsm] = useState(state.settings.nsm ?? '121235070001');
+  const [phone, setPhone] = useState(state.settings.phone ?? '(0341) 395882 / 0812-3456-7890');
+  const [email, setEmail] = useState(state.settings.email ?? 'mts.cendekia@kemenag.go.id');
+  const [website, setWebsite] = useState(state.settings.website ?? 'www.mtscendekia.sch.id');
+  const [logoUrl, setLogoUrl] = useState<string>(state.settings.logoUrl ?? '');
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  // Official Signatories
+  const [headmasterName, setHeadmasterName] = useState(state.settings.headmasterName ?? 'H. Ahmad Fauzi, S.Ag., M.Pd.I.');
+  const [headmasterNip, setHeadmasterNip] = useState(state.settings.headmasterNip ?? '19750812 200212 1 003');
+  const [headmasterTitle, setHeadmasterTitle] = useState(state.settings.headmasterTitle ?? 'Kepala Madrasah');
+  const [curriculumLeaderName, setCurriculumLeaderName] = useState(state.settings.curriculumLeaderName ?? 'Siti Aminah, S.Pd.I., M.Pd.');
+  const [curriculumLeaderNip, setCurriculumLeaderNip] = useState(state.settings.curriculumLeaderNip ?? '19820315 200901 2 008');
+  const [curriculumLeaderTitle, setCurriculumLeaderTitle] = useState(state.settings.curriculumLeaderTitle ?? 'Waka Bidang Kurikulum');
 
   // Period Definitions List
   const [definitions, setDefinitions] = useState<PeriodDefinition[]>(() => {
@@ -1760,10 +2180,45 @@ function SettingsScreen({
     setDefinitions(updated);
   };
 
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      setLogoError(null);
+      const dataUrl = await processLogoUpload(file);
+      setLogoUrl(dataUrl);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal memproses berkas logo.';
+      setLogoError(msg);
+    }
+  };
+
+  const handleResetLogo = () => {
+    setLogoUrl('');
+    setLogoError(null);
+  };
+
   const handleSave = () => {
     const kbmCount = definitions.filter((d) => d.activityType === 'KBM').length;
     onSettingsChange({
       schoolName: schoolName.trim() || 'MTs Cendekia Nusantara',
+      ministry: ministry.trim() || 'KEMENTERIAN AGAMA REPUBLIK INDONESIA',
+      regionalOffice: regionalOffice.trim() || 'KANTOR KEMENTERIAN AGAMA KABUPATEN MALANG',
+      address: address.trim() || 'Jl. Raya Cendekia No. 45, Sumberpucung',
+      city: city.trim() || 'Kabupaten Malang',
+      postalCode: postalCode.trim() || '65165',
+      npsn: npsn.trim() || '20580001',
+      nsm: nsm.trim() || '121235070001',
+      phone: phone.trim() || '(0341) 395882 / 0812-3456-7890',
+      email: email.trim() || 'mts.cendekia@kemenag.go.id',
+      website: website.trim() || 'www.mtscendekia.sch.id',
+      logoUrl: logoUrl.trim() || undefined,
+      headmasterName: headmasterName.trim() || 'H. Ahmad Fauzi, S.Ag., M.Pd.I.',
+      headmasterNip: headmasterNip.trim() || '19750812 200212 1 003',
+      headmasterTitle: headmasterTitle.trim() || 'Kepala Madrasah',
+      curriculumLeaderName: curriculumLeaderName.trim() || 'Siti Aminah, S.Pd.I., M.Pd.',
+      curriculumLeaderNip: curriculumLeaderNip.trim() || '19820315 200901 2 008',
+      curriculumLeaderTitle: curriculumLeaderTitle.trim() || 'Waka Bidang Kurikulum',
       academicYear: academicYear.trim() || '2026/2027',
       semester,
       periodMinutes: Number(periodMinutes) || 40,
@@ -2199,16 +2654,56 @@ function SettingsScreen({
       {activeTab === 'general' && (
         <div className="settings-layout">
           <div className="settings-main-column">
-            <Card eyebrow="SCHOOL IDENTITY" title="Identitas Madrasah">
+            {/* 1. Kementerian & Satuan Pendidikan */}
+            <Card eyebrow="KELEMBAGAAN KEMENAG" title="Kementerian & Satuan Pendidikan">
               <div className="settings-form-grid">
                 <div className="field-group field-span-two">
-                  <label>Nama Madrasah / Sekolah</label>
+                  <label>Kementerian yang Menaungi</label>
+                  <input
+                    value={ministry}
+                    onChange={(e) => setMinistry(e.target.value)}
+                    placeholder="Contoh: KEMENTERIAN AGAMA REPUBLIK INDONESIA"
+                  />
+                  <small>Muncul pada baris teratas Kop Surat seluruh dokumen resmi.</small>
+                </div>
+
+                <div className="field-group field-span-two">
+                  <label>Kantor Wilayah / Kankemenag Daerah</label>
+                  <input
+                    value={regionalOffice}
+                    onChange={(e) => setRegionalOffice(e.target.value)}
+                    placeholder="Contoh: KANTOR KEMENTERIAN AGAMA KABUPATEN MALANG"
+                  />
+                  <small>Muncul pada baris kedua Kop Surat resmi.</small>
+                </div>
+
+                <div className="field-group field-span-two">
+                  <label>Nama Satuan Pendidikan / Madrasah</label>
                   <input
                     value={schoolName}
                     onChange={(e) => setSchoolName(e.target.value)}
-                    placeholder="Nama sekolah"
+                    placeholder="Nama madrasah lengkap, misal: MTs Cendekia Nusantara"
                   />
                 </div>
+
+                <div className="field-group">
+                  <label>Nomor Statistik Madrasah (NSM)</label>
+                  <input
+                    value={nsm}
+                    onChange={(e) => setNsm(e.target.value)}
+                    placeholder="12 digit NSM, misal: 121235070001"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label>NPSN (Nomor Pokok Sekolah Nasional)</label>
+                  <input
+                    value={npsn}
+                    onChange={(e) => setNpsn(e.target.value)}
+                    placeholder="8 digit NPSN, misal: 20580001"
+                  />
+                </div>
+
                 <div className="field-group">
                   <label>Tahun Ajaran</label>
                   <input
@@ -2217,6 +2712,7 @@ function SettingsScreen({
                     placeholder="2026/2027"
                   />
                 </div>
+
                 <div className="field-group">
                   <label>Semester</label>
                   <select value={semester} onChange={(e) => setSemester(e.target.value as 'Ganjil' | 'Genap')}>
@@ -2225,11 +2721,315 @@ function SettingsScreen({
                   </select>
                 </div>
               </div>
-              <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
-                <Button icon={Save} onClick={handleSave}>Simpan Identitas</Button>
+            </Card>
+
+            {/* 2. Alamat & Narahubung Resmi */}
+            <Card eyebrow="DOMISILI & KONTAK" title="Alamat & Narahubung Resmi">
+              <div className="settings-form-grid">
+                <div className="field-group field-span-two">
+                  <label>Alamat Lengkap (Jalan / Desa / Kecamatan)</label>
+                  <input
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Jl. Raya Cendekia No. 45, Sumberpucung"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label>Kota / Kabupaten Pengesahan</label>
+                  <input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Kabupaten Malang"
+                  />
+                  <small>Dicantumkan di atas tanggal tanda tangan surat keputusan.</small>
+                </div>
+
+                <div className="field-group">
+                  <label>Kode Pos</label>
+                  <input
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    placeholder="65165"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label>No. Telepon / WhatsApp Madrasah</label>
+                  <input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(0341) 395882 / 0812-3456-7890"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label>Email Resmi Madrasah</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="mts.cendekia@kemenag.go.id"
+                  />
+                </div>
+
+                <div className="field-group field-span-two">
+                  <label>Website / Portal Madrasah</label>
+                  <input
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                    placeholder="www.mtscendekia.sch.id"
+                  />
+                </div>
+              </div>
+            </Card>
+
+            {/* 3. Pejabat Penandatangan Dokumen Resmi */}
+            <Card eyebrow="OFFICIAL SIGNATORIES" title="Pejabat Pengesah Dokumen Resmi">
+              <div style={{ padding: '12px 14px', background: '#f0f5eb', border: '1px solid #dfe9dd', borderRadius: '8px', color: '#28413e', fontSize: '12.5px', display: 'flex', gap: '9px', alignItems: 'flex-start', marginBottom: '16px' }}>
+                <ShieldCheck size={16} style={{ color: '#2f7771', flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ lineHeight: 1.5 }}>
+                  <strong style={{ display: 'block', color: '#16483f', marginBottom: '2px' }}>Integrasi Dokumen Otomatis</strong>
+                  Nama, jabatan, dan NIP pejabat di bawah ini otomatis tertera pada kolom tanda tangan dokumen resmi: Jadwal Semua Kelas (A4), Jadwal Guru perorangan, dan Rekap Presensi Bulanan.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ padding: '14px', border: '1px solid #e2e7dc', borderRadius: '10px', background: '#fcfdfb' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <Award size={16} style={{ color: '#2f7771' }} />
+                    <strong style={{ fontSize: '13px', color: '#16483f' }}>Pejabat 1: Kepala Madrasah</strong>
+                  </div>
+                  <div className="settings-form-grid">
+                    <div className="field-group">
+                      <label>Nomenklatur Jabatan</label>
+                      <input
+                        value={headmasterTitle}
+                        onChange={(e) => setHeadmasterTitle(e.target.value)}
+                        placeholder="Kepala Madrasah"
+                      />
+                    </div>
+                    <div className="field-group">
+                      <label>Nama Lengkap &amp; Gelar</label>
+                      <input
+                        value={headmasterName}
+                        onChange={(e) => setHeadmasterName(e.target.value)}
+                        placeholder="H. Ahmad Fauzi, S.Ag., M.Pd.I."
+                      />
+                    </div>
+                    <div className="field-group field-span-two">
+                      <label>NIP / NPK Kepala Madrasah</label>
+                      <input
+                        value={headmasterNip}
+                        onChange={(e) => setHeadmasterNip(e.target.value)}
+                        placeholder="19750812 200212 1 003"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ padding: '14px', border: '1px solid #e2e7dc', borderRadius: '10px', background: '#fcfdfb' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <Award size={16} style={{ color: '#2f7771' }} />
+                    <strong style={{ fontSize: '13px', color: '#16483f' }}>Pejabat 2: Waka Kurikulum / Pengesah</strong>
+                  </div>
+                  <div className="settings-form-grid">
+                    <div className="field-group">
+                      <label>Nomenklatur Jabatan</label>
+                      <input
+                        value={curriculumLeaderTitle}
+                        onChange={(e) => setCurriculumLeaderTitle(e.target.value)}
+                        placeholder="Waka Bidang Kurikulum"
+                      />
+                    </div>
+                    <div className="field-group">
+                      <label>Nama Lengkap &amp; Gelar</label>
+                      <input
+                        value={curriculumLeaderName}
+                        onChange={(e) => setCurriculumLeaderName(e.target.value)}
+                        placeholder="Siti Aminah, S.Pd.I., M.Pd."
+                      />
+                    </div>
+                    <div className="field-group field-span-two">
+                      <label>NIP / NPK Waka Kurikulum</label>
+                      <input
+                        value={curriculumLeaderNip}
+                        onChange={(e) => setCurriculumLeaderNip(e.target.value)}
+                        placeholder="19820315 200901 2 008"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                <Button icon={Save} onClick={handleSave}>
+                  {saved ? 'Tersimpan' : 'Simpan Seluruh Identitas'}
+                </Button>
               </div>
             </Card>
           </div>
+
+          <aside className="settings-side-column">
+            {/* Logo Madrasah Card */}
+            <Card eyebrow="OFFICIAL EMBLEM" title="Logo Dokumen Madrasah">
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', padding: '10px 0' }}>
+                <div
+                  style={{
+                    width: '100px',
+                    height: '100px',
+                    borderRadius: '50%',
+                    padding: '6px',
+                    border: '2px solid #bc945e',
+                    background: '#ffffff',
+                    boxShadow: '0 4px 14px rgba(11, 52, 53, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <img
+                    src={logoUrl || getDefaultMadrasahLogo()}
+                    alt="Logo Madrasah"
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                </div>
+
+                <div>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '3px 9px',
+                      borderRadius: '6px',
+                      background: logoUrl ? '#e6f4ee' : '#f5eedb',
+                      color: logoUrl ? '#16483f' : '#8e6b28',
+                      border: `1px solid ${logoUrl ? '#bce0d0' : '#e6d8b5'}`,
+                    }}
+                  >
+                    {logoUrl ? '✓ Logo Kustom Terpasang' : 'Logo Standar Kemenag (Bawaan)'}
+                  </span>
+                </div>
+
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label
+                    className="button button-secondary"
+                    style={{
+                      width: '100%',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <Upload size={14} /> Unggah Logo Kustom
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+
+                  {logoUrl && (
+                    <button
+                      type="button"
+                      className="button button-quiet"
+                      style={{ width: '100%', justifyContent: 'center', fontSize: '11.5px', color: '#8e625a' }}
+                      onClick={handleResetLogo}
+                    >
+                      <RotateCcw size={13} /> Reset ke Logo Kemenag
+                    </button>
+                  )}
+                </div>
+
+                {logoError && (
+                  <div style={{ width: '100%', padding: '8px', background: '#faeae6', border: '1px solid #ebd0c8', borderRadius: '6px', color: '#b24c3d', fontSize: '11px', textAlign: 'left' }}>
+                    {logoError}
+                  </div>
+                )}
+
+                <p style={{ margin: 0, fontSize: '11px', color: '#657874', lineHeight: 1.5, textAlign: 'left' }}>
+                  Disarankan format PNG/JPEG dengan latar transparan atau putih (rasio 1:1). Logo otomatis dikompres dan terintegrasi di Kop Surat dokumen PDF.
+                </p>
+              </div>
+            </Card>
+
+            {/* Kop Surat Live Preview Card */}
+            <Card eyebrow="LIVE DOCUMENT PREVIEW" title="Pratinjau Kop Surat Resmi">
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #d4d7cc',
+                  borderRadius: '8px',
+                  padding: '14px 12px 12px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                }}
+              >
+                {/* Header Content */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <img
+                    src={logoUrl || getDefaultMadrasahLogo()}
+                    alt="Logo Kop"
+                    style={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+                    <div style={{ fontSize: '8.5px', fontWeight: 700, color: '#0b3435', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.2 }}>
+                      {ministry || 'KEMENTERIAN AGAMA REPUBLIK INDONESIA'}
+                    </div>
+                    <div style={{ fontSize: '8px', fontWeight: 700, color: '#16483f', textTransform: 'uppercase', letterSpacing: '0.03em', lineHeight: 1.2, marginTop: '1px' }}>
+                      {regionalOffice || 'KANTOR KEMENTERIAN AGAMA KABUPATEN MALANG'}
+                    </div>
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#0b3435', textTransform: 'uppercase', letterSpacing: '0.02em', lineHeight: 1.2, marginTop: '2px' }}>
+                      {schoolName || 'MTS CENDEKIA NUSANTARA'}
+                    </div>
+                    <div style={{ fontSize: '7px', fontWeight: 600, color: '#435e58', marginTop: '2px' }}>
+                      NSM: {nsm || '-'} &nbsp;|&nbsp; NPSN: {npsn || '-'}
+                    </div>
+                    <div style={{ fontSize: '6.5px', color: '#657874', marginTop: '1px', lineHeight: 1.2 }}>
+                      {address || '-'}, {city || '-'} {postalCode || ''}
+                    </div>
+                    <div style={{ fontSize: '6.5px', color: '#657874', marginTop: '1px' }}>
+                      Telp: {phone || '-'} &nbsp;|&nbsp; Email: {email || '-'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Double Rule Line Divider */}
+                <div style={{ marginTop: '7px', marginBottom: '8px' }}>
+                  <div style={{ height: '2px', background: '#0b3435', width: '100%' }} />
+                  <div style={{ height: '0.7px', background: '#0b3435', width: '100%', marginTop: '1.5px' }} />
+                </div>
+
+                {/* Simulated Document Body Title */}
+                <div style={{ textAlign: 'center', padding: '4px 0' }}>
+                  <div style={{ fontSize: '8.5px', fontWeight: 800, color: '#0b3435', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    JADWAL PELAJARAN SEMESTER {semester.toUpperCase()}
+                  </div>
+                  <div style={{ fontSize: '7.5px', color: '#435e58', fontWeight: 600 }}>
+                    TAHUN AJARAN {academicYear}
+                  </div>
+                </div>
+
+                {/* Simulated Mini Signature Footer */}
+                <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #e4e2d7', display: 'flex', justifyContent: 'flex-end', textAlign: 'right' }}>
+                  <div style={{ fontSize: '7px', color: '#435e58', lineHeight: 1.35 }}>
+                    <div>{city}, {formatDate()}</div>
+                    <div style={{ fontWeight: 600, color: '#0b3435' }}>{headmasterTitle}</div>
+                    <div style={{ height: '18px' }} />
+                    <div style={{ fontWeight: 700, textDecoration: 'underline', color: '#0b3435' }}>{headmasterName}</div>
+                    <div>NIP. {headmasterNip}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#435e58' }}>
+                <ShieldCheck size={14} style={{ color: '#2f7771', flexShrink: 0 }} />
+                <span>Terintegrasi di seluruh cetak dokumen PDF resmi.</span>
+              </div>
+            </Card>
+          </aside>
         </div>
       )}
 
@@ -2529,6 +3329,46 @@ function MasterScreen({
             </div>
             {addType === 'teacher' && (
               <>
+                <div className="form-grid-two">
+                  <div className="field-group">
+                    <label>Jabatan Guru (Isi Manual / Rekomendasi)</label>
+                    <input
+                      value={form.roleTitle}
+                      onChange={(e) => setForm({ ...form, roleTitle: e.target.value })}
+                      placeholder="Misal: Waka Kurikulum, Guru Mapel, Guru BK..."
+                    />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                      {COMMON_TEACHER_POSITIONS.slice(0, 7).map((pos) => (
+                        <button
+                          key={pos}
+                          type="button"
+                          onClick={() => setForm({ ...form, roleTitle: pos })}
+                          style={{
+                            fontSize: '10.5px',
+                            padding: '2px 7px',
+                            borderRadius: '5px',
+                            border: form.roleTitle === pos ? '1px solid #16483f' : '1px solid #d4d7cc',
+                            background: form.roleTitle === pos ? '#e6f0ed' : '#ffffff',
+                            color: form.roleTitle === pos ? '#0b3435' : '#435e58',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {pos}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="field-group">
+                    <label>NIP / NPK / NUPTK</label>
+                    <input
+                      value={form.nip}
+                      onChange={(e) => setForm({ ...form, nip: e.target.value })}
+                      placeholder="Contoh: 19820514 200801 1 005 atau tanda (-)"
+                    />
+                    <small>Dicantumkan di bawah nama guru pada seluruh berkas resmi.</small>
+                  </div>
+                </div>
+
                 <div className="field-group">
                   <label>Kualifikasi Mapel yang Diampu</label>
                   <div className="qualification-check-grid">
@@ -2621,6 +3461,7 @@ function MasterScreen({
               <thead>
                 <tr>
                   <th>Guru</th>
+                  <th>Jabatan</th>
                   <th>Kode</th>
                   <th>Kualifikasi Mapel</th>
                   <th>Beban Kebutuhan (JP)</th>
@@ -2639,7 +3480,19 @@ function MasterScreen({
 
                   return (
                     <tr key={t.id}>
-                      <td><strong>{t.name}</strong></td>
+                      <td>
+                        <strong style={{ display: 'block', color: '#0f2c28' }}>{t.name}</strong>
+                        {t.nip && (
+                          <span style={{ fontSize: '11px', color: '#657874', letterSpacing: '0.01em' }}>
+                            NIP. {t.nip}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: '#16483f', fontSize: '12.5px' }}>
+                          {t.roleTitle || 'Guru Mapel'}
+                        </span>
+                      </td>
                       <td><span className="code-pill">{t.code}</span></td>
                       <td>
                         <div className="tag-list">

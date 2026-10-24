@@ -4,7 +4,9 @@ import path from 'node:path';
 import { GoogleGenAI } from '@google/genai';
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
+const isProduction = process.env.NODE_ENV === 'production';
+const port = isProduction ? Number(process.env.PORT || 8080) : 3000;
+const rootDir = process.cwd();
 const enableGemini = process.env.ENABLE_GEMINI_ASSISTANT === 'true';
 const apiKey = process.env.GEMINI_API_KEY?.trim();
 const corsOrigins = (process.env.CORS_ORIGIN || '').split(',').map((value) => value.trim()).filter(Boolean);
@@ -72,14 +74,11 @@ app.post('/api/ai/explain', rateLimit, async (req: Request, res: Response) => {
   }
 });
 
-const isProduction = process.env.NODE_ENV === 'production';
-const rootDir = process.cwd();
-
 async function startServer() {
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);

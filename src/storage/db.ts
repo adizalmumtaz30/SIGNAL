@@ -28,6 +28,27 @@ export async function loadAppState(): Promise<AppState> {
       if (!Array.isArray(state.attendance)) state.attendance = [];
       if (!Array.isArray(state.holidays)) state.holidays = [];
       if (!state.settings.periodMinutes) state.settings.periodMinutes = 40;
+      if (!state.settings.ministry) state.settings.ministry = 'KEMENTERIAN AGAMA REPUBLIK INDONESIA';
+      if (!state.settings.regionalOffice) state.settings.regionalOffice = 'KANTOR KEMENTERIAN AGAMA KABUPATEN MALANG';
+      if (!state.settings.address) state.settings.address = 'Jl. Raya Cendekia No. 45, Sumberpucung';
+      if (!state.settings.city) state.settings.city = 'Kabupaten Malang';
+      if (!state.settings.postalCode) state.settings.postalCode = '65165';
+      if (!state.settings.npsn) state.settings.npsn = '20580001';
+      if (!state.settings.nsm) state.settings.nsm = '121235070001';
+      if (!state.settings.phone) state.settings.phone = '0812-3456-7890 / (0341) 395123';
+      if (!state.settings.email) state.settings.email = 'mts.cendekia@kemenag.go.id';
+      if (!state.settings.headmasterName) state.settings.headmasterName = 'Drs. H. M. Zainuddin, M.Pd.I';
+      if (!state.settings.headmasterNip) state.settings.headmasterNip = '197405101999031003';
+      if (!state.settings.headmasterTitle) state.settings.headmasterTitle = 'Kepala Madrasah';
+      if (!state.settings.curriculumLeaderName) state.settings.curriculumLeaderName = 'Ahmad Fauzi, S.Pd.';
+      if (!state.settings.curriculumLeaderNip) state.settings.curriculumLeaderNip = '198204122008011015';
+      if (!state.settings.curriculumLeaderTitle) state.settings.curriculumLeaderTitle = 'Waka Bidang Kurikulum';
+
+      if (Array.isArray(state.teachers)) {
+        state.teachers.forEach((t) => {
+          if (!t.roleTitle) t.roleTitle = 'Guru Mapel';
+        });
+      }
       return state;
     }
     const initial = createDemoState();
