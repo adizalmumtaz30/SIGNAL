@@ -55,6 +55,38 @@ export interface OfficialDocCustomTexts {
   rightNip?: string;
 }
 
+export type PaperSize = 'a4' | 'f4';
+
+/**
+ * Returns exact dimensions in millimeters for supported paper sizes:
+ * - A4: 210 x 297 mm
+ * - F4 / Folio (Indonesia standard): 210 x 330 mm
+ */
+export function getPaperDimensions(
+  paperSize: PaperSize = 'a4',
+  orientation: 'landscape' | 'portrait' = 'landscape',
+): [number, number] {
+  if (paperSize === 'f4') {
+    return orientation === 'landscape' ? [330, 210] : [210, 330];
+  }
+  return orientation === 'landscape' ? [297, 210] : [210, 297];
+}
+
+/**
+ * Creates a calibrated jsPDF instance configured for A4 or F4 with landscape/portrait
+ */
+export function createJsPDFDocument(
+  orientation: 'landscape' | 'portrait' = 'landscape',
+  paperSize: PaperSize = 'a4',
+): jsPDF {
+  const format = getPaperDimensions(paperSize, orientation);
+  return new jsPDF({
+    orientation,
+    unit: 'mm',
+    format,
+  });
+}
+
 /**
  * Convert CSS Hex color string to [R, G, B] tuple
  */
@@ -351,13 +383,14 @@ function addSignatureBlock(
     rightName?: string;
     rightNip?: string;
   },
+  forceCurrentPage = false,
 ) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const s = state.settings;
 
-  let y = startY + 12;
-  if (y + 36 > pageHeight - 16) {
+  let y = startY + (forceCurrentPage ? 4 : 10);
+  if (!forceCurrentPage && y + 36 > pageHeight - 16) {
     doc.addPage();
     y = 26;
   }
@@ -380,43 +413,46 @@ function addSignatureBlock(
   const rightNip = customSigners?.rightNip || s.headmasterNip || '197405101999031003';
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(forceCurrentPage ? 7.8 : 8.5);
   doc.setTextColor(...INK);
+
+  const sigGap = forceCurrentPage ? 16 : 22;
 
   // Left signature
   const leftX = 22;
   doc.text('Mengetahui / Memeriksa,', leftX, y);
   doc.setFont('helvetica', 'bold');
-  doc.text(leftTitle, leftX, y + 4.5);
+  doc.text(leftTitle, leftX, y + 4);
   doc.setFont('helvetica', 'normal');
 
   doc.setFont('helvetica', 'bold');
-  doc.text(leftName, leftX, y + 24);
+  doc.text(leftName, leftX, y + sigGap);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text(leftNip ? `NIP. ${leftNip}` : 'NIP. ...............................................', leftX, y + 28);
+  doc.setFontSize(forceCurrentPage ? 7 : 7.5);
+  doc.text(leftNip ? `NIP. ${leftNip}` : 'NIP. ...............................................', leftX, y + sigGap + 3.8);
 
   // Right signature
   const isLandscape = pageWidth > 250;
   const rightX = pageWidth - (isLandscape ? 85 : 75);
-  doc.setFontSize(8.5);
+  doc.setFontSize(forceCurrentPage ? 7.8 : 8.5);
   doc.text(`${city}, ${dateStr}`, rightX, y);
   doc.setFont('helvetica', 'bold');
-  doc.text(rightTitle, rightX, y + 4.5);
+  doc.text(rightTitle, rightX, y + 4);
   doc.setFont('helvetica', 'normal');
 
   doc.setFont('helvetica', 'bold');
-  doc.text(rightName, rightX, y + 24);
+  doc.text(rightName, rightX, y + sigGap);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text(rightNip ? `NIP. ${rightNip}` : 'NIP. ...............................................', rightX, y + 28);
+  doc.setFontSize(forceCurrentPage ? 7 : 7.5);
+  doc.text(rightNip ? `NIP. ${rightNip}` : 'NIP. ...............................................', rightX, y + sigGap + 3.8);
 }
 
 /**
  * 1. Export Master School Schedule PDF (A4 Landscape)
  */
-export function exportScheduleMasterPDF(state: AppState): void {
-  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
+export function exportScheduleMasterPDF(state: AppState, options?: { paperSize?: PaperSize }): void {
+  const paperSize = options?.paperSize ?? 'a4';
+  const doc = createJsPDFDocument('landscape', paperSize);
   const entries = state.draft ?? state.activeSchedule ?? [];
   const classes = state.classes.filter((c) => c.isActive);
   const activeDays = state.settings.activeDays;
@@ -515,9 +551,13 @@ export function exportScheduleMasterPDF(state: AppState): void {
 }
 
 export interface WeeklyClassSchedulePdfOptions extends Partial<OfficialDocCustomTexts> {
+  paperSize?: PaperSize;
   orientation?: 'landscape' | 'portrait';
+  layoutMode?: 'single_page' | 'two_pages';
   kopSurat?: boolean;
   principalTitle?: string;
+  principalName?: string;
+  principalNip?: string;
   coordinatorTitle?: string;
   coordinatorName?: string;
   coordinatorNip?: string;
@@ -527,9 +567,10 @@ export interface WeeklyClassSchedulePdfOptions extends Partial<OfficialDocCustom
 }
 
 /**
- * Render 2-page Weekly Class Schedule:
- * - Page 1: Clean Timetable Matrix with comfortable typography & KPI cards
- * - Page 2: Dedicated Teacher JP Breakdown & Allocation Recap table with signatures
+ * Render Weekly Class Schedule:
+ * - Single-Page Mode: Timetable Matrix + Compact Teacher Allocation Recap + Signatures all on 1 page!
+ * - Two-Page Mode: Page 1 Timetable Matrix with KPI cards, Page 2 Detailed Teacher Breakdown with Signatures.
+ * Fully supports A4 and F4 (Folio Indonesia) with automatic layout adjustments.
  */
 function renderClassWeeklyPages(
   doc: jsPDF,
@@ -539,8 +580,12 @@ function renderClassWeeklyPages(
   isFirstClass = true,
 ): void {
   const orientation = options?.orientation ?? 'landscape';
+  const paperSize = options?.paperSize ?? 'a4';
+  const isSinglePage = options?.layoutMode === 'single_page' || options?.includeTeacherRecapPage === false;
+
   if (!isFirstClass) {
-    doc.addPage('a4', orientation);
+    const format = getPaperDimensions(paperSize, orientation);
+    doc.addPage(format, orientation);
   }
 
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -557,71 +602,72 @@ function renderClassWeeklyPages(
 
   const teacherIdsInClass = [...new Set(classEntries.map((e) => e.teacherId))];
   const subjectIdsInClass = [...new Set(classEntries.map((e) => e.subjectId))];
+  const academicYear = options?.academicYear || state.settings.academicYear;
+  const semester = options?.semester || state.settings.semester;
+  const schoolName = options?.schoolName || state.settings.schoolName;
 
   // ==========================================
   // HALAMAN 1: MATRIKS JADWAL MINGGUAN KELAS
   // ==========================================
-  let currentY = 12;
+  let currentY = isSinglePage ? 6 : 10;
 
   if (options?.kopSurat !== false) {
-    currentY = renderOfficialKopSurat(doc, state, 10, options, false);
+    currentY = renderOfficialKopSurat(doc, state, currentY, options, isSinglePage);
   } else {
-    currentY = 16;
+    currentY = isSinglePage ? 10 : 16;
   }
 
   // Document Title & Class Subtitle
-  const academicYear = options?.academicYear || state.settings.academicYear;
-  const semester = options?.semester || state.settings.semester;
   const defaultTitle = `JADWAL PELAJARAN MINGGUAN — KELAS ${cls.name}`;
   const docTitle = options?.documentTitle ? `${options.documentTitle} — KELAS ${cls.name}` : defaultTitle;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
+  doc.setFontSize(isSinglePage ? 11 : 13);
   doc.setTextColor(17, 45, 42);
   doc.text(docTitle, pageWidth / 2, currentY, { align: 'center' });
 
-  currentY += 4.2;
+  currentY += isSinglePage ? 3.5 : 4.2;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(isSinglePage ? 7.5 : 8.5);
   doc.setTextColor(80, 95, 90);
-  doc.text(
-    `Tingkat ${cls.level} · Tahun Ajaran ${academicYear} · Semester ${semester}`,
-    pageWidth / 2,
-    currentY,
-    { align: 'center' },
-  );
+  const subtitleText = isSinglePage
+    ? `Tingkat ${cls.level} · T.A. ${academicYear} (${semester}) · Alokasi: ${classEntries.length} JP (${astro.hours} Jam Efektif) · ${teacherIdsInClass.length} Guru Pengajar · ${schoolName}`
+    : `Tingkat ${cls.level} · Tahun Ajaran ${academicYear} · Semester ${semester}`;
+  doc.text(subtitleText, pageWidth / 2, currentY, { align: 'center' });
 
-  currentY += 5.5;
+  currentY += isSinglePage ? 3.5 : 5.5;
 
-  // KPI Summary Bar (4 Cards)
+  // KPI Summary Bar (4 Cards) - Rendered only in two-page mode
   const boxWidth = (pageWidth - 28) / 4;
   const boxHeight = 11.5;
 
-  const kpisPage1 = [
-    { label: 'TOTAL ALOKASI JP', value: `${classEntries.length} JP Mingguan` },
-    { label: 'WAKTU ASTRONOMIS', value: `${astro.hours} Jam (${astro.minutes} Mnt)` },
-    { label: 'GURU PENGAJAR', value: `${teacherIdsInClass.length} Pendidik` },
-    { label: 'MATA PELAJARAN', value: `${subjectIdsInClass.length} Bidang Studi` },
-  ];
+  if (!isSinglePage) {
+    const kpisPage1 = [
+      { label: 'TOTAL ALOKASI JP', value: `${classEntries.length} JP Mingguan` },
+      { label: 'WAKTU ASTRONOMIS', value: `${astro.hours} Jam (${astro.minutes} Mnt)` },
+      { label: 'GURU PENGAJAR', value: `${teacherIdsInClass.length} Pendidik` },
+      { label: 'MATA PELAJARAN', value: `${subjectIdsInClass.length} Bidang Studi` },
+    ];
 
-  kpisPage1.forEach((kpi, kIdx) => {
-    const x = 14 + kIdx * boxWidth;
-    doc.setFillColor(248, 251, 249);
-    doc.setDrawColor(215, 230, 222);
-    doc.roundedRect(x, currentY, boxWidth - 3, boxHeight, 2, 2, 'FD');
+    kpisPage1.forEach((kpi, kIdx) => {
+      const x = 14 + kIdx * boxWidth;
+      doc.setFillColor(248, 251, 249);
+      doc.setDrawColor(215, 230, 222);
+      doc.roundedRect(x, currentY, boxWidth - 3, boxHeight, 2, 2, 'FD');
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
-    doc.setTextColor(80, 105, 95);
-    doc.text(kpi.label, x + (boxWidth - 3) / 2, currentY + 4, { align: 'center' });
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(80, 105, 95);
+      doc.text(kpi.label, x + (boxWidth - 3) / 2, currentY + 4, { align: 'center' });
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(11, 52, 53);
-    doc.text(kpi.value, x + (boxWidth - 3) / 2, currentY + 9, { align: 'center' });
-  });
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(11, 52, 53);
+      doc.text(kpi.value, x + (boxWidth - 3) / 2, currentY + 9, { align: 'center' });
+    });
 
-  currentY += boxHeight + 4;
+    currentY += boxHeight + 4;
+  }
 
   // Timetable Matrix AutoTable
   const tableHeaders = ['Jam / JP', ...activeDays];
@@ -652,8 +698,8 @@ function renderClassWeeklyPages(
     tableData.push(row);
   }
 
-  // Calculate day column width
-  const timeColWidth = orientation === 'landscape' ? 26 : 20;
+  // Calculate day column width based on available paper width (A4 vs F4)
+  const timeColWidth = orientation === 'landscape' ? 24 : 18;
   const dayColWidth = (pageWidth - 28 - timeColWidth) / activeDays.length;
 
   const colStyles: Record<number, { halign: 'center' | 'left' | 'right'; cellWidth: number; fontStyle?: 'bold' | 'normal'; fillColor?: [number, number, number] }> = {
@@ -663,27 +709,33 @@ function renderClassWeeklyPages(
     colStyles[idx + 1] = { halign: 'center', cellWidth: dayColWidth };
   });
 
+  const cellPaddingVal = isSinglePage ? 1.8 : 2.5;
+
   autoTable(doc, {
     startY: currentY,
     head: [tableHeaders],
     body: tableData,
     theme: 'grid',
+    tableLineWidth: 0.35,
+    tableLineColor: [11, 52, 53],
     headStyles: {
       fillColor: [11, 52, 53],
       textColor: 255,
-      fontSize: 8.5,
+      fontSize: isSinglePage ? 7.8 : 8.5,
       fontStyle: 'bold',
       halign: 'center',
-      cellPadding: 2.8,
+      cellPadding: isSinglePage ? 2 : 2.8,
+      lineWidth: 0.3,
+      lineColor: [11, 52, 53],
     },
     bodyStyles: {
-      fontSize: orientation === 'landscape' ? 7.5 : 6.8,
+      fontSize: orientation === 'landscape' ? (isSinglePage ? 7 : 7.5) : 6.5,
       halign: 'center',
       valign: 'middle',
-      cellPadding: orientation === 'landscape' ? 2.5 : 1.8,
+      cellPadding: cellPaddingVal,
       textColor: [20, 35, 33],
       lineColor: [215, 225, 220],
-      lineWidth: 0.25,
+      lineWidth: 0.2,
     },
     columnStyles: colStyles,
     didParseCell: (data) => {
@@ -707,9 +759,127 @@ function renderClassWeeklyPages(
   });
 
   const lastTableP1 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
+
+  // Single-Page Layout: Compact Teacher Allocation Recap & Signatures on Page 1
+  if (isSinglePage) {
+    let p1AfterTableY = lastTableP1.finalY + 3;
+
+    // Header label for compact teacher allocation
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(11, 52, 53);
+    doc.text(`REKAPITULASI PEMBAGIAN TUGAS MENGAJAR KELAS ${cls.name}`, 14, p1AfterTableY);
+
+    p1AfterTableY += 2.2;
+
+    // Build compact teacher recap data
+    const teachersInClassObj = teacherIdsInClass
+      .map((tid) => state.teachers.find((t) => t.id === tid))
+      .filter((t): t is typeof state.teachers[0] => Boolean(t))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const compactTeacherRows: Array<Array<string | number>> = [];
+    teachersInClassObj.forEach((teacher, idx) => {
+      const tEntries = classEntries.filter((e) => e.teacherId === teacher.id);
+      const taughtSubNames = [...new Set(
+        tEntries.map((e) => state.subjects.find((s) => s.id === e.subjectId)?.name ?? 'Mapel'),
+      )].join(', ');
+
+      const teachingDays = [...new Set(tEntries.map((e) => e.day))];
+      teachingDays.sort((a, b) => activeDays.indexOf(a) - activeDays.indexOf(b));
+      const daysStr = teachingDays.join(', ');
+
+      const totalSchoolJp = allEntries.filter((e) => e.teacherId === teacher.id).length;
+
+      compactTeacherRows.push([
+        idx + 1,
+        teacher.code,
+        teacher.nip ? `${teacher.name} (NIP. ${teacher.nip})` : teacher.name,
+        taughtSubNames,
+        daysStr,
+        `${tEntries.length} JP`,
+        `${totalSchoolJp} / ${teacher.maxWeeklyJP} JP`,
+      ]);
+    });
+
+    // Total summary row
+    compactTeacherRows.push([
+      '',
+      '',
+      `TOTAL BEBAN KELAS ${cls.name}`,
+      `${subjectIdsInClass.length} Mata Pelajaran`,
+      `${activeDays.length} Hari KBM`,
+      `${classEntries.length} JP`,
+      '100% Terpenuhi',
+    ]);
+
+    const compactHeaders = ['No', 'Kode', 'Nama & NIP Pendidik', 'Mata Pelajaran', 'Hari KBM', 'Beban Kelas', 'Total Madrasah'];
+
+    autoTable(doc, {
+      startY: p1AfterTableY,
+      head: [compactHeaders],
+      body: compactTeacherRows,
+      theme: 'grid',
+      tableLineWidth: 0.25,
+      tableLineColor: [11, 52, 53],
+      headStyles: {
+        fillColor: [11, 52, 53],
+        textColor: 255,
+        fontSize: 6.8,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1.5,
+      },
+      bodyStyles: {
+        fontSize: 6.4,
+        halign: 'center',
+        cellPadding: 1.2,
+        textColor: [20, 35, 33],
+        lineColor: [215, 225, 220],
+        lineWidth: 0.15,
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 7 },
+        1: { halign: 'center', cellWidth: 12 },
+        2: { halign: 'left', cellWidth: orientation === 'landscape' ? 68 : 50, fontStyle: 'bold' },
+        3: { halign: 'left', cellWidth: orientation === 'landscape' ? 64 : 46 },
+        4: { halign: 'center', cellWidth: orientation === 'landscape' ? 36 : 26 },
+        5: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
+        6: { halign: 'center', cellWidth: 24 },
+      },
+      didParseCell: (data) => {
+        if (data.row.index === compactTeacherRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [232, 244, 238];
+          data.cell.styles.textColor = [11, 52, 53];
+        }
+      },
+      alternateRowStyles: {
+        fillColor: [253, 254, 253],
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    const lastTableTeacher = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
+
+    // Single-Page Official Signature Block
+    addSignatureBlock(doc, state, lastTableTeacher.finalY + 1.5, {
+      city: options?.signerCity,
+      date: options?.signerDate,
+      leftTitle: options?.leftTitle || options?.coordinatorTitle || `Wali Kelas ${cls.name} / Koordinator Kurikulum`,
+      leftName: options?.leftName || options?.coordinatorName,
+      leftNip: options?.leftNip || options?.coordinatorNip,
+      rightTitle: options?.rightTitle || `${options?.principalTitle || 'Kepala Madrasah'} ${options?.schoolName || state.settings.schoolName}`,
+      rightName: options?.rightName || options?.principalName,
+      rightNip: options?.rightNip || options?.principalNip,
+    }, true);
+
+    return;
+  }
+
+  // Two-Page Mode: Page 1 Notice Callout
   const p1NoticeY = Math.min(lastTableP1.finalY + 4, pageHeight - 20);
 
-  // Clean Notification Callout at Bottom of Page 1
   doc.setFillColor(243, 248, 245);
   doc.setDrawColor(205, 230, 220);
   doc.roundedRect(14, p1NoticeY, pageWidth - 28, 9, 2, 2, 'FD');
@@ -944,18 +1114,20 @@ export function exportScheduleClassPDF(
   if (!cls) return;
 
   const orientation = options?.orientation ?? 'landscape';
-  const doc = new jsPDF({ orientation, format: 'a4' });
+  const paperSize = options?.paperSize ?? 'a4';
+  const doc = createJsPDFDocument(orientation, paperSize);
 
   renderClassWeeklyPages(doc, state, cls, options, true);
 
   addDocFooter(doc, options?.schoolName || state.settings.schoolName);
 
   const cleanName = cls.name.replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`SIGNAL_Jadwal_Mingguan_Kelas_${cleanName}.pdf`);
+  const paperSuffix = paperSize.toUpperCase();
+  doc.save(`SIGNAL_Jadwal_Mingguan_Kelas_${cleanName}_${paperSuffix}.pdf`);
 }
 
 /**
- * Export All Classes Weekly Schedule PDF (A4 Clean Layout Bundle)
+ * Export All Classes Weekly Schedule PDF (A4/F4 Clean Layout Bundle)
  */
 export function exportAllClassesWeeklyPDF(
   state: AppState,
@@ -965,7 +1137,8 @@ export function exportAllClassesWeeklyPDF(
   if (classes.length === 0) return;
 
   const orientation = options?.orientation ?? 'landscape';
-  const doc = new jsPDF({ orientation, format: 'a4' });
+  const paperSize = options?.paperSize ?? 'a4';
+  const doc = createJsPDFDocument(orientation, paperSize);
 
   classes.forEach((cls, idx) => {
     renderClassWeeklyPages(doc, state, cls, options, idx === 0);
@@ -974,10 +1147,12 @@ export function exportAllClassesWeeklyPDF(
   addDocFooter(doc, options?.schoolName || state.settings.schoolName);
 
   const cleanYear = (options?.academicYear || state.settings.academicYear).replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`SIGNAL_Jadwal_Mingguan_Semua_Kelas_${cleanYear}.pdf`);
+  const paperSuffix = paperSize.toUpperCase();
+  doc.save(`SIGNAL_Jadwal_Mingguan_Semua_Kelas_${paperSuffix}_${cleanYear}.pdf`);
 }
 
 export interface AllClassesSinglePagePdfOptions extends Partial<OfficialDocCustomTexts> {
+  paperSize?: PaperSize;
   colorizeSubjects?: boolean;
   compactNames?: boolean;
   includeKop?: boolean;
@@ -989,15 +1164,16 @@ export interface AllClassesSinglePagePdfOptions extends Partial<OfficialDocCusto
 }
 
 /**
- * 2B. Export All Classes in Single Page A4 Landscape + Dedicated Teacher JP Recap Page
- * - Page 1 (A4 Landscape): Master Timetable containing all classes on 1 page with compact names & colorized subject cells
- * - Page 2 (A4 Landscape): Comprehensive Teacher JP Allocation Recap Table with Official Signature Block at Footer
+ * 2B. Export All Classes in Single Page Landscape (A4 or F4) + Dedicated Teacher JP Recap Page
+ * - Page 1 (Landscape): Master Timetable containing all classes on 1 page with compact names & colorized subject cells
+ * - Page 2 (Landscape): Comprehensive Teacher JP Allocation Recap Table with Official Signature Block at Footer
  */
 export function exportAllClassesSinglePageA4PDF(
   state: AppState,
   options?: AllClassesSinglePagePdfOptions,
 ): void {
-  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
+  const paperSize = options?.paperSize ?? 'a4';
+  const doc = createJsPDFDocument('landscape', paperSize);
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -1076,12 +1252,13 @@ export function exportAllClassesSinglePageA4PDF(
     }
   }
 
-  // Column width calculations for 297mm width (margin 10mm left, 10mm right = 277mm available)
-  const hariWidth = 16;
+  // Column width calculations scaled to available page width (A4: 297mm, F4: 330mm)
+  const availableWidth = pageWidth - 20; // 10mm left & right margins
+  const hariWidth = paperSize === 'f4' ? 18 : 16;
   const jpWidth = 7;
-  const waktuWidth = 17;
-  const fixedWidth = hariWidth + jpWidth + waktuWidth; // 40mm
-  const classColWidth = Math.max(16, (277 - fixedWidth) / (classes.length || 1));
+  const waktuWidth = paperSize === 'f4' ? 19 : 17;
+  const fixedWidth = hariWidth + jpWidth + waktuWidth;
+  const classColWidth = Math.max(16, (availableWidth - fixedWidth) / (classes.length || 1));
 
   const colStyles: Record<number, any> = {
     0: { halign: 'center', cellWidth: hariWidth, fontStyle: 'bold', fillColor: [244, 248, 246] },
@@ -1195,7 +1372,7 @@ export function exportAllClassesSinglePageA4PDF(
   // HALAMAN 2: REKAPITULASI ALOKASI JP & BEBAN MENGAJAR GURU (HALAMAN TERPISAH)
   // =========================================================================
   if (options?.includeTeacherRecapPage !== false) {
-    doc.addPage('a4', 'landscape');
+    doc.addPage(getPaperDimensions(paperSize, 'landscape'), 'landscape');
     let p2Y = 8;
     if (options?.includeKop !== false && options?.kopSurat !== false) {
       p2Y = renderOfficialKopSurat(doc, state, 8, options, false);
@@ -1401,17 +1578,23 @@ export function exportAllClassesSinglePageA4PDF(
   addDocFooter(doc, schoolName);
 
   const cleanYear = academicYear.replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`SIGNAL_Jadwal_Semua_Kelas_Satu_Halaman_${cleanYear}.pdf`);
+  const paperSuffix = paperSize.toUpperCase();
+  doc.save(`SIGNAL_Jadwal_Semua_Kelas_${paperSuffix}_${cleanYear}.pdf`);
 }
 
 /**
- * 3. Export Teacher Schedule PDF (A4 Portrait)
+ * 3. Export Teacher Schedule PDF (A4/F4 Portrait)
  */
-export function exportScheduleTeacherPDF(state: AppState, teacherId: string): void {
+export function exportScheduleTeacherPDF(
+  state: AppState,
+  teacherId: string,
+  options?: { paperSize?: PaperSize },
+): void {
   const teacher = state.teachers.find((t) => t.id === teacherId) ?? state.teachers[0];
   if (!teacher) return;
 
-  const doc = new jsPDF({ orientation: 'portrait', format: 'a4' });
+  const paperSize = options?.paperSize ?? 'a4';
+  const doc = createJsPDFDocument('portrait', paperSize);
   const entries = (state.draft ?? state.activeSchedule ?? []).filter((e) => e.teacherId === teacher.id);
   const activeDays = state.settings.activeDays;
   const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
@@ -1543,6 +1726,7 @@ export function exportScheduleTeacherPDF(state: AppState, teacherId: string): vo
 }
 
 export interface AttendanceRecapPdfOptions extends Partial<OfficialDocCustomTexts> {
+  paperSize?: PaperSize;
   orientation?: 'landscape' | 'portrait';
   kopSurat?: boolean;
   principalTitle?: string;
@@ -1598,7 +1782,8 @@ export function exportAttendanceRecapPDF(
   options?: AttendanceRecapPdfOptions,
 ): void {
   const orientation = options?.orientation ?? 'landscape';
-  const doc = new jsPDF({ orientation, format: 'a4' });
+  const paperSize = options?.paperSize ?? 'a4';
+  const doc = createJsPDFDocument(orientation, paperSize);
   const pageWidth = doc.internal.pageSize.getWidth();
 
   const allTeachers = state.teachers.filter((t) => t.isActive && selectedTeacherIds.includes(t.id));
@@ -1861,5 +2046,6 @@ export function exportAttendanceRecapPDF(
   addDocFooter(doc, options?.schoolName || state.settings.schoolName);
 
   const cleanMonth = monthName.replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`SIGNAL_Rekap_Presensi_Guru_${cleanMonth}.pdf`);
+  const paperSuffix = paperSize.toUpperCase();
+  doc.save(`SIGNAL_Rekap_Presensi_Guru_${paperSuffix}_${cleanMonth}.pdf`);
 }

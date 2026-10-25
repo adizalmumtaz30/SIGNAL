@@ -7,7 +7,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import type { AppState, Day } from '../domain/types';
-import { exportAttendanceRecapPDF, type AttendanceRecapPdfOptions } from '../utils/pdfExport';
+import { exportAttendanceRecapPDF, type AttendanceRecapPdfOptions, type PaperSize } from '../utils/pdfExport';
 
 interface AttendancePdfExportModalProps {
   state: AppState;
@@ -27,6 +27,7 @@ export function AttendancePdfExportModal({
   const activeTeachers = useMemo(() => state.teachers.filter((t) => t.isActive), [state.teachers]);
 
   const [monthYear, setMonthYear] = useState<string>(() => initialMonth || new Date().toISOString().slice(0, 7));
+  const [paperSize, setPaperSize] = useState<PaperSize>('a4');
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [includeKop, setIncludeKop] = useState<boolean>(true);
   const [includeSignature, setIncludeSignature] = useState<boolean>(true);
@@ -160,6 +161,7 @@ export function AttendancePdfExportModal({
     try {
       setIsExporting(true);
       const options: AttendanceRecapPdfOptions = {
+        paperSize,
         orientation,
         kopSurat: includeKop,
         ministry: ministry.trim(),
@@ -193,7 +195,7 @@ export function AttendancePdfExportModal({
       };
 
       exportAttendanceRecapPDF(state, monthYear, selectedTeacherIds, options);
-      onNotify('Laporan Rekapitulasi Presensi Resmi (A4) berhasil diunduh.', 'success');
+      onNotify(`Laporan Rekapitulasi Presensi Resmi (${paperSize.toUpperCase()}) berhasil diunduh.`, 'success');
       onClose();
     } catch (err) {
       console.error('Attendance PDF export failed:', err);
@@ -294,6 +296,55 @@ export function AttendancePdfExportModal({
             </div>
           </div>
 
+          {/* Universal Paper Size Selector (A4 & F4 Indonesia) */}
+          <div style={{ padding: '12px 14px', background: '#f8faf9', border: '1px solid #dbe6e0', borderRadius: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#0b3435', letterSpacing: '0.04em' }}>
+                UKURAN KERTAS DOKUMEN (A4 &amp; F4 INDONESIA)
+              </label>
+              <span style={{ fontSize: '10px', color: '#55726b', fontWeight: 600 }}>
+                {paperSize === 'a4' ? '210 × 297 mm · Standar Cetak Umum' : '210 × 330 mm · Folio Madrasah (+33mm Ruang Kolom)'}
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setPaperSize('a4')}
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  border: paperSize === 'a4' ? '2px solid #16483f' : '1px solid #d4d7cc',
+                  background: paperSize === 'a4' ? '#e7f2ed' : '#ffffff',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: '12px', color: paperSize === 'a4' ? '#0b3435' : '#173637' }}>
+                  Kertas A4 (210 × 297 mm)
+                </div>
+                <small style={{ fontSize: '10px', color: '#687a75' }}>Standar internasional &amp; printer madrasah</small>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaperSize('f4')}
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  border: paperSize === 'f4' ? '2px solid #16483f' : '1px solid #d4d7cc',
+                  background: paperSize === 'f4' ? '#e7f2ed' : '#ffffff',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: '12px', color: paperSize === 'f4' ? '#0b3435' : '#173637' }}>
+                  Kertas F4 / Folio (210 × 330 mm)
+                </div>
+                <small style={{ fontSize: '10px', color: '#687a75' }}>Standar administrasi Kemenag (+33mm lebar)</small>
+              </button>
+            </div>
+          </div>
+
           {/* Form Options Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
             <div className="field-group">
@@ -307,14 +358,14 @@ export function AttendancePdfExportModal({
             </div>
 
             <div className="field-group">
-              <label>Tata Letak &amp; Orientasi Kertas (A4)</label>
+              <label>Tata Letak &amp; Orientasi Kertas ({paperSize.toUpperCase()})</label>
               <select
                 value={orientation}
                 onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
                 style={{ height: '38px', fontSize: '12.5px' }}
               >
-                <option value="landscape">A4 Landscape (Tabel Lebar &amp; Lengkap - Rekomendasi)</option>
-                <option value="portrait">A4 Portrait (Vertikal Standar)</option>
+                <option value="landscape">{paperSize.toUpperCase()} Landscape (Tabel Lebar &amp; Lengkap - Rekomendasi)</option>
+                <option value="portrait">{paperSize.toUpperCase()} Portrait (Vertikal Standar)</option>
               </select>
             </div>
           </div>

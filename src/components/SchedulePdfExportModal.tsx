@@ -21,6 +21,7 @@ import {
   exportScheduleTeacherPDF,
   exportAllClassesSinglePageA4PDF,
   type WeeklyClassSchedulePdfOptions,
+  type PaperSize,
 } from '../utils/pdfExport';
 import { jpToAstronomical } from '../domain/time';
 
@@ -41,12 +42,14 @@ export function SchedulePdfExportModal({
   onClose,
   onNotify,
 }: SchedulePdfExportModalProps) {
-  // Main export format selection - defaults to 'all_single_page' (A4 landscape master + recap page)
+  // Main export format selection - defaults to 'all_single_page' (landscape master + recap page)
   const [exportType, setExportType] = useState<ExportType>('all_single_page');
   const [targetClassId, setTargetClassId] = useState<string>(() => selectedClassId || state.classes[0]?.id || 'all');
   const [targetTeacherId, setTargetTeacherId] = useState<string>(() => state.teachers[0]?.id || '');
 
   // Options for layout & printing
+  const [paperSize, setPaperSize] = useState<PaperSize>('a4');
+  const [classLayoutMode, setClassLayoutMode] = useState<'single_page' | 'two_pages'>('single_page');
   const [classOrientation, setClassOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [colorizeSubjects, setColorizeSubjects] = useState<boolean>(true);
   const [compactNames, setCompactNames] = useState<boolean>(true);
@@ -192,23 +195,26 @@ export function SchedulePdfExportModal({
       };
 
       if (exportType === 'all_single_page') {
-        // ⭐ Mode Rekomendasi Utama: Semua Kelas dalam Satu Halaman A4 Landscape + Halaman Rekap Guru & TTD
+        // ⭐ Mode Rekomendasi Utama: Semua Kelas dalam Satu Halaman Landscape + Halaman Rekap Guru & TTD
         exportAllClassesSinglePageA4PDF(state, {
           ...commonOverrides,
-          documentTitle: documentTitle.trim() || 'JADWAL PELAJARAN SELURUH KELAS (SATU HALAMAN A4)',
+          documentTitle: documentTitle.trim() || `JADWAL PELAJARAN SELURUH KELAS (${paperSize.toUpperCase()})`,
+          paperSize,
           colorizeSubjects,
           compactNames,
           includeKop,
           includeTeacherRecapPage: includeRecapPage,
         });
-        onNotify('PDF Jadwal Semua Kelas (1 Halaman A4 Landscape + Halaman Rekapitulasi Guru & TTD) berhasil diunduh.', 'success');
+        onNotify(`PDF Jadwal Semua Kelas (Kertas ${paperSize.toUpperCase()} Landscape) berhasil diunduh.`, 'success');
       } else if (exportType === 'class') {
         const options: WeeklyClassSchedulePdfOptions = {
           ...commonOverrides,
+          paperSize,
+          layoutMode: classLayoutMode,
           documentTitle: documentTitle.trim() || undefined,
           orientation: classOrientation,
           kopSurat: includeKop,
-          includeTeacherRecapPage: includeRecapPage,
+          includeTeacherRecapPage: classLayoutMode === 'two_pages' && includeRecapPage,
           colorizeSubjects,
           compactNames,
           coordinatorTitle:
@@ -219,24 +225,26 @@ export function SchedulePdfExportModal({
 
         if (targetClassId === 'all') {
           exportAllClassesWeeklyPDF(state, options);
+          const pageCountStr = classLayoutMode === 'single_page' ? `${activeClasses.length} Halaman (1 Hal/Kelas)` : `${activeClasses.length * 2} Halaman (2 Hal/Kelas)`;
           onNotify(
-            `PDF Bundel Jadwal Seluruh Kelas (${activeClasses.length * 2} Halaman: Jadwal + Rekap Guru) berhasil diunduh.`,
+            `PDF Bundel Jadwal Seluruh Kelas (${pageCountStr} · Kertas ${paperSize.toUpperCase()}) berhasil diunduh.`,
             'success',
           );
         } else {
           exportScheduleClassPDF(state, targetClassId, options);
+          const modeStr = classLayoutMode === 'single_page' ? '1 Halaman Terpadu' : '2 Halaman Lengkap';
           onNotify(
-            `PDF Jadwal Mingguan Kelas ${selectedClassObj?.name ?? ''} (2 Halaman: Jadwal + Rekap Guru Terpisah) berhasil diunduh.`,
+            `PDF Jadwal Mingguan Kelas ${selectedClassObj?.name ?? ''} (${modeStr} · Kertas ${paperSize.toUpperCase()}) berhasil diunduh.`,
             'success',
           );
         }
       } else if (exportType === 'school') {
-        exportScheduleMasterPDF(state);
-        onNotify('PDF Jadwal Sekolah Induk berhasil diunduh.', 'success');
+        exportScheduleMasterPDF(state, { paperSize });
+        onNotify(`PDF Jadwal Sekolah Induk (Kertas ${paperSize.toUpperCase()}) berhasil diunduh.`, 'success');
       } else {
         const tch = state.teachers.find((t) => t.id === targetTeacherId);
-        exportScheduleTeacherPDF(state, targetTeacherId);
-        onNotify(`PDF Jadwal Guru ${tch?.name ?? ''} berhasil diunduh.`, 'success');
+        exportScheduleTeacherPDF(state, targetTeacherId, { paperSize });
+        onNotify(`PDF Jadwal Guru ${tch?.name ?? ''} (Kertas ${paperSize.toUpperCase()}) berhasil diunduh.`, 'success');
       }
       onClose();
     } catch (err) {
@@ -439,18 +447,67 @@ export function SchedulePdfExportModal({
             </div>
           </div>
 
+          {/* Universal Paper Size Selector (A4 & F4 Indonesia) */}
+          <div style={{ padding: '12px 14px', background: '#f8faf9', border: '1px solid #dbe6e0', borderRadius: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#0b3435', letterSpacing: '0.04em' }}>
+                UKURAN KERTAS CETAK (A4 &amp; F4 INDONESIA)
+              </label>
+              <span style={{ fontSize: '10px', color: '#55726b', fontWeight: 600 }}>
+                {paperSize === 'a4' ? '210 × 297 mm · Standar Cetak Umum' : '210 × 330 mm · Folio Madrasah (+33mm Ruang Kolom)'}
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setPaperSize('a4')}
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  border: paperSize === 'a4' ? '2px solid #16483f' : '1px solid #d4d7cc',
+                  background: paperSize === 'a4' ? '#e7f2ed' : '#ffffff',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: '12px', color: paperSize === 'a4' ? '#0b3435' : '#173637' }}>
+                  Kertas A4 (210 × 297 mm)
+                </div>
+                <small style={{ fontSize: '10px', color: '#687a75' }}>Standar internasional &amp; printer madrasah</small>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaperSize('f4')}
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  border: paperSize === 'f4' ? '2px solid #16483f' : '1px solid #d4d7cc',
+                  background: paperSize === 'f4' ? '#e7f2ed' : '#ffffff',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: '12px', color: paperSize === 'f4' ? '#0b3435' : '#173637' }}>
+                  Kertas F4 / Folio (210 × 330 mm)
+                </div>
+                <small style={{ fontSize: '10px', color: '#687a75' }}>Standar administrasi Kemenag (+33mm lebar)</small>
+              </button>
+            </div>
+          </div>
+
           {/* Mode 1 & 2 Specific Controls */}
           {exportType === 'all_single_page' && (
             <div style={{ padding: '12px 14px', background: '#fcfdfb', border: '1px solid #dbe6e0', borderRadius: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                 <Sparkles size={16} style={{ color: '#2f7771' }} />
                 <strong style={{ fontSize: '12.5px', color: '#0b3435' }}>
-                  Struktur Dokumen Cetak 1 Halaman A4 Landscape + Rekapitulasi Guru:
+                  Struktur Dokumen Cetak 1 Halaman {paperSize.toUpperCase()} Landscape + Rekapitulasi Guru:
                 </strong>
               </div>
               <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '11.5px', color: '#435e58', lineHeight: 1.55 }}>
                 <li>
-                  <strong>Halaman 1 (A4 Landscape):</strong> Seluruh kelas paralel ({activeClasses.map((c) => c.name).join(', ')}) disusun dalam 1 halaman utuh dengan pewarnaan sel sesuai warna mapel dan singkatan nama otomatis agar muat presisi.
+                  <strong>Halaman 1 ({paperSize.toUpperCase()} Landscape):</strong> Seluruh kelas paralel ({activeClasses.map((c) => c.name).join(', ')}) disusun dalam 1 halaman utuh dengan pewarnaan sel sesuai warna mapel dan singkatan nama otomatis agar muat presisi.
                 </li>
                 <li>
                   <strong>Halaman 2 (Lembar Terpisah):</strong> Tabel rekapitulasi beban JP seluruh guru madrasah beserta rincian per rombel dan <strong>kolom tanda tangan resmi di footer</strong>.
@@ -460,33 +517,79 @@ export function SchedulePdfExportModal({
           )}
 
           {exportType === 'class' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
-              <div className="field-group">
-                <label>Pilih Kelas Sasaran</label>
-                <select
-                  value={targetClassId}
-                  onChange={(e) => setTargetClassId(e.target.value)}
-                  style={{ height: '38px', fontSize: '12.5px' }}
-                >
-                  <option value="all">⭐ Cetak Seluruh Kelas Sekaligus (Bundel Dokumen Lengkap)</option>
-                  {activeClasses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      Kelas {c.name} (Tingkat {c.level})
-                    </option>
-                  ))}
-                </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {/* Class Layout Mode: 1 Halaman Terpadu vs 2 Halaman Lengkap */}
+              <div style={{ padding: '11px 13px', background: '#fcfdfb', border: '1px solid #dbe6e0', borderRadius: '10px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#0b3435', marginBottom: '8px', letterSpacing: '0.04em' }}>
+                  TATA LETAK JADWAL KELAS
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setClassLayoutMode('single_page')}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: classLayoutMode === 'single_page' ? '2px solid #16483f' : '1px solid #d4d7cc',
+                      background: classLayoutMode === 'single_page' ? '#e7f2ed' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: '12px', color: classLayoutMode === 'single_page' ? '#0b3435' : '#173637' }}>
+                      ⭐ 1 Halaman Terpadu (Single Page)
+                    </div>
+                    <small style={{ fontSize: '10px', color: '#687a75' }}>Jadwal mingguan, rekap beban guru, &amp; TTD dalam 1 lembar utuh</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setClassLayoutMode('two_pages')}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: classLayoutMode === 'two_pages' ? '2px solid #16483f' : '1px solid #d4d7cc',
+                      background: classLayoutMode === 'two_pages' ? '#e7f2ed' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: '12px', color: classLayoutMode === 'two_pages' ? '#0b3435' : '#173637' }}>
+                      2 Halaman Lengkap (Two Pages)
+                    </div>
+                    <small style={{ fontSize: '10px', color: '#687a75' }}>Halaman 1 Matriks lega, Halaman 2 Rekap detail &amp; TTD</small>
+                  </button>
+                </div>
               </div>
 
-              <div className="field-group">
-                <label>Orientasi Kertas (A4)</label>
-                <select
-                  value={classOrientation}
-                  onChange={(e) => setClassOrientation(e.target.value as 'landscape' | 'portrait')}
-                  style={{ height: '38px', fontSize: '12.5px' }}
-                >
-                  <option value="landscape">A4 Landscape (Rekomendasi - Matriks Lega &amp; Nyaman)</option>
-                  <option value="portrait">A4 Portrait (Format Vertikal)</option>
-                </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
+                <div className="field-group">
+                  <label>Pilih Kelas Sasaran</label>
+                  <select
+                    value={targetClassId}
+                    onChange={(e) => setTargetClassId(e.target.value)}
+                    style={{ height: '38px', fontSize: '12.5px' }}
+                  >
+                    <option value="all">⭐ Cetak Seluruh Kelas Sekaligus (Bundel Dokumen Lengkap)</option>
+                    {activeClasses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        Kelas {c.name} (Tingkat {c.level})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field-group">
+                  <label>Orientasi Kertas ({paperSize.toUpperCase()})</label>
+                  <select
+                    value={classOrientation}
+                    onChange={(e) => setClassOrientation(e.target.value as 'landscape' | 'portrait')}
+                    style={{ height: '38px', fontSize: '12.5px' }}
+                  >
+                    <option value="landscape">{paperSize.toUpperCase()} Landscape (Rekomendasi - Matriks Lega &amp; Nyaman)</option>
+                    <option value="portrait">{paperSize.toUpperCase()} Portrait (Format Vertikal)</option>
+                  </select>
+                </div>
               </div>
             </div>
           )}
