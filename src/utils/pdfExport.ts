@@ -1,8 +1,9 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { AppState, Day, SchoolClass } from '../domain/types';
-import { jpToAstronomical } from '../domain/time';
+import { isSlotBlocked, jpToAstronomical } from '../domain/time';
 import { getDefaultMadrasahLogo } from './madrasahLogo';
+import { groupClassesForMasterMatrix } from './matrixGrouping';
 
 // Color palette matching SIGNAL branding
 const TEAL = [11, 52, 53] as [number, number, number]; // #0b3435
@@ -356,16 +357,12 @@ function addDocFooter(doc: jsPDF, schoolName: string) {
     doc.setTextColor(...MUTED);
 
     // Footer rule
-    doc.setDrawColor(225, 230, 225);
-    doc.line(14, pageHeight - 12, pageWidth - 14, pageHeight - 12);
-
-    const dateStr = new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-    doc.text(`Dicetak dari SIGNAL · ${schoolName} · ${dateStr}`, 14, pageHeight - 7);
-    doc.text(`Halaman ${i} dari ${pageCount}`, pageWidth - 14, pageHeight - 7, { align: 'right' });
+    doc.setDrawColor(220, 228, 224);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 11, pageWidth - 14, pageHeight - 11);
+    const cleanSchool = schoolName || 'Madrasah Tsanawiyah';
+    doc.text(cleanSchool, 14, pageHeight - 6.5);
+    doc.text(`Halaman ${i} dari ${pageCount}`, pageWidth - 14, pageHeight - 6.5, { align: 'right' });
   }
 }
 
@@ -451,103 +448,11 @@ function addSignatureBlock(
  * 1. Export Master School Schedule PDF (A4 Landscape)
  */
 export function exportScheduleMasterPDF(state: AppState, options?: { paperSize?: PaperSize }): void {
-  const paperSize = options?.paperSize ?? 'a4';
-  const doc = createJsPDFDocument('landscape', paperSize);
-  const entries = state.draft ?? state.activeSchedule ?? [];
-  const classes = state.classes.filter((c) => c.isActive);
-  const activeDays = state.settings.activeDays;
-  const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
-
-  let currentY = renderOfficialKopSurat(doc, state, 10);
-
-  const pageWidth = doc.internal.pageSize.getWidth();
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(...TEAL);
-  doc.text('JADWAL PELAJARAN INDUK MADRASAH (MASTER SCHEDULE)', pageWidth / 2, currentY, { align: 'center' });
-
-  currentY += 4.5;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(...MUTED);
-  doc.text(
-    `Matriks Seluruh Rombel (${classes.map((c) => c.name).join(', ')}) · T.A. ${state.settings.academicYear} Semester ${state.settings.semester}`,
-    pageWidth / 2,
-    currentY,
-    { align: 'center' },
-  );
-
-  currentY += 6;
-
-  for (const day of activeDays) {
-    const dayEntries = entries.filter((e) => e.day === day);
-
-    // Day Header label
-    if (currentY > 165) {
-      doc.addPage();
-      currentY = 25;
-    }
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(...TEAL);
-    doc.text(`HARI: ${day.toUpperCase()}`, 14, currentY);
-    currentY += 4;
-
-    const tableHeaders = ['JP / Waktu', ...classes.map((c) => `Kelas ${c.name}`)];
-    const tableData: string[][] = [];
-
-    for (const jp of periods) {
-      const slot = state.slots.find((s) => s.day === day && s.kind === 'TEACHING' && s.jpNo === jp);
-      const timeLabel = slot ? `JP ${jp}\n${slot.start}-${slot.end}` : `JP ${jp}`;
-
-      const rowCells = [timeLabel];
-      for (const cls of classes) {
-        const entry = dayEntries.find((e) => e.classId === cls.id && e.jpNo === jp);
-        if (entry) {
-          const subject = state.subjects.find((s) => s.id === entry.subjectId);
-          const teacher = state.teachers.find((t) => t.id === entry.teacherId);
-          rowCells.push(`${subject?.code ?? entry.subjectId}\n(${teacher?.code ?? teacher?.name ?? '—'})`);
-        } else {
-          rowCells.push('—');
-        }
-      }
-      tableData.push(rowCells);
-    }
-
-    autoTable(doc, {
-      startY: currentY,
-      head: [tableHeaders],
-      body: tableData,
-      theme: 'grid',
-      headStyles: {
-        fillColor: TEAL,
-        textColor: 255,
-        fontSize: 8,
-        fontStyle: 'bold',
-        halign: 'center',
-      },
-      bodyStyles: {
-        fontSize: 8,
-        halign: 'center',
-        valign: 'middle',
-        cellPadding: 2,
-      },
-      alternateRowStyles: {
-        fillColor: [250, 252, 250],
-      },
-      margin: { left: 14, right: 14 },
-    });
-
-    const lastAutoTable = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
-    currentY = lastAutoTable.finalY + 10;
-  }
-
-  addSignatureBlock(doc, state, currentY);
-  addDocFooter(doc, state.settings.schoolName);
-
-  const cleanYear = state.settings.academicYear.replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`SIGNAL_Jadwal_Sekolah_${cleanYear}.pdf`);
+  exportAllClassesSinglePageA4PDF(state, {
+    paperSize: options?.paperSize,
+    documentTitle: 'JADWAL PELAJARAN INDUK MADRASAH',
+    includeTeacherRecapPage: true,
+  });
 }
 
 export interface WeeklyClassSchedulePdfOptions extends Partial<OfficialDocCustomTexts> {
@@ -840,12 +745,12 @@ function renderClassWeeklyPages(
       },
       columnStyles: {
         0: { halign: 'center', cellWidth: 7 },
-        1: { halign: 'center', cellWidth: 12 },
-        2: { halign: 'left', cellWidth: orientation === 'landscape' ? 68 : 50, fontStyle: 'bold' },
-        3: { halign: 'left', cellWidth: orientation === 'landscape' ? 64 : 46 },
-        4: { halign: 'center', cellWidth: orientation === 'landscape' ? 36 : 26 },
-        5: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
-        6: { halign: 'center', cellWidth: 24 },
+        1: { halign: 'center', cellWidth: 10 },
+        2: { halign: 'left', cellWidth: orientation === 'landscape' ? 60 : 42, fontStyle: 'bold' },
+        3: { halign: 'left', cellWidth: orientation === 'landscape' ? 54 : 38 },
+        4: { halign: 'center', cellWidth: orientation === 'landscape' ? 30 : 22 },
+        5: { halign: 'center', cellWidth: orientation === 'landscape' ? 18 : 14, fontStyle: 'bold' },
+        6: { halign: 'center', cellWidth: orientation === 'landscape' ? 20 : 16 },
       },
       didParseCell: (data) => {
         if (data.row.index === compactTeacherRows.length - 1) {
@@ -888,7 +793,7 @@ function renderClassWeeklyPages(
   doc.setFontSize(7.5);
   doc.setTextColor(17, 65, 55);
   doc.text(
-    '👉 Rincian Lengkap & Rekapitulasi Beban JP Per Guru Tercantum Pada Halaman 2 (Lembar Rekapitulasi)',
+    'Rincian Lengkap & Rekapitulasi Beban JP Guru Tercantum Pada Lampiran Pengesahan',
     20,
     p1NoticeY + 4,
   );
@@ -906,7 +811,7 @@ function renderClassWeeklyPages(
   // HALAMAN 2: TABEL REKAPITULASI JP PER GURU (SEPARATE DEDICATED PAGE)
   // =========================================================================
   if (options?.includeTeacherRecapPage !== false) {
-    doc.addPage('a4', orientation);
+    doc.addPage(getPaperDimensions(paperSize, orientation), orientation);
     let p2Y = 12;
 
     if (options?.kopSurat !== false) {
@@ -1027,6 +932,13 @@ function renderClassWeeklyPages(
       'Status Alokasi',
     ];
 
+    const availP2W = pageWidth - 28;
+    const baseP2ColW = orientation === 'landscape'
+      ? [8, 12, 54, 40, 48, 28, 20, 29, 30]
+      : [6, 9, 36, 26, 32, 20, 15, 20, 18];
+    const totalP2ColW = baseP2ColW.reduce((a, b) => a + b, 0);
+    const p2Scale = availP2W / totalP2ColW;
+
     autoTable(doc, {
       startY: p2Y,
       head: [p2Headers],
@@ -1047,15 +959,15 @@ function renderClassWeeklyPages(
         textColor: [20, 35, 33],
       },
       columnStyles: {
-        0: { halign: 'center', cellWidth: 8 },
-        1: { halign: 'center', cellWidth: 14 },
-        2: { halign: 'left', cellWidth: orientation === 'landscape' ? 46 : 34, fontStyle: 'bold' },
-        3: { halign: 'left', cellWidth: orientation === 'landscape' ? 36 : 26 },
-        4: { halign: 'left', cellWidth: orientation === 'landscape' ? 44 : 32 },
-        5: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 20 },
-        6: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
-        7: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 20 },
-        8: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 18 },
+        0: { halign: 'center', cellWidth: baseP2ColW[0] * p2Scale },
+        1: { halign: 'center', cellWidth: baseP2ColW[1] * p2Scale },
+        2: { halign: 'left', cellWidth: baseP2ColW[2] * p2Scale, fontStyle: 'bold' },
+        3: { halign: 'left', cellWidth: baseP2ColW[3] * p2Scale },
+        4: { halign: 'left', cellWidth: baseP2ColW[4] * p2Scale },
+        5: { halign: 'center', cellWidth: baseP2ColW[5] * p2Scale },
+        6: { halign: 'center', cellWidth: baseP2ColW[6] * p2Scale, fontStyle: 'bold' },
+        7: { halign: 'center', cellWidth: baseP2ColW[7] * p2Scale },
+        8: { halign: 'center', cellWidth: baseP2ColW[8] * p2Scale },
       },
       didParseCell: (data) => {
         if (data.row.index === teacherDataRows.length - 1) {
@@ -1189,9 +1101,9 @@ export function exportAllClassesSinglePageA4PDF(
   const semester = options?.semester || state.settings.semester;
   const schoolName = options?.schoolName || state.settings.schoolName;
 
-  // ==========================================
-  // HALAMAN 1: SEMUA KELAS DALAM 1 HALAMAN A4
-  // ==========================================
+  // =========================================================================
+  // HALAMAN 1: MATRIKS SELURUH KELAS TERPADU (BLOK MINGGUAN SENIN - SABTU)
+  // =========================================================================
   let currentY = 7;
   if (options?.includeKop !== false && options?.kopSurat !== false) {
     currentY = renderOfficialKopSurat(doc, state, 7, options, true);
@@ -1199,172 +1111,318 @@ export function exportAllClassesSinglePageA4PDF(
     currentY = 12;
   }
 
-  // Document Heading
+  // Document Heading - Adaptive title (NO misleading "(SATU HALAMAN A4)" on F4 or multi-page)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(...TEAL);
-  const docTitle = options?.documentTitle || 'JADWAL PELAJARAN SELURUH KELAS (SATU HALAMAN A4)';
+  const docTitle = options?.documentTitle || 'JADWAL PELAJARAN SELURUH KELAS';
   doc.text(docTitle.toUpperCase(), pageWidth / 2, currentY, { align: 'center' });
 
-  currentY += 3.8;
+  currentY += 3.6;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.2);
+  doc.setFontSize(6.8);
   doc.setTextColor(70, 90, 85);
-  const subHeading = `Tahun Ajaran ${academicYear} · Semester ${semester} · Seluruh Rombel: ${classes.map((c) => c.name).join(', ')} · ${schoolName}`;
+  const subHeading = `Tahun Ajaran ${academicYear} · Semester ${semester} · Rombel Aktif: ${classes.map((c) => c.name).join(', ')} · ${schoolName}`;
   doc.text(subHeading, pageWidth / 2, currentY, { align: 'center' });
-  currentY += 4;
+  currentY += 4.5;
 
-  // Build the unified table
-  const tableHeaders = ['Hari', 'JP', 'Waktu', ...classes.map((c) => `Kelas ${c.name}`)];
-  const tableData: Array<Array<string | number>> = [];
-  const cellSubjectMap: Record<number, Record<number, string>> = {};
+  // Group classes into parallel rombel rows (Baris 1 — Kelompok A: VII-A, VIII-A, IX-A; Baris 2 — Kelompok B: VII-B, VIII-B, IX-B)
+  const rombelRows = groupClassesForMasterMatrix(classes);
 
-  let currentRowIdx = 0;
-  for (const day of activeDays) {
-    for (const jp of periods) {
-      const slot = state.slots.find((s) => s.day === day && s.kind === 'TEACHING' && s.jpNo === jp);
-      const timeStr = slot ? `${slot.start}-${slot.end}` : '';
+  // Available vertical space for matrix blocks
+  const legendSpaceNeeded = colorize ? 13 : 8;
+  const bottomMargin = 12; // footer room
+  const availableMatrixHeight = pageHeight - currentY - legendSpaceNeeded - bottomMargin;
 
-      const rowCells: Array<string | number> = [
-        day.toUpperCase(),
-        jp,
-        timeStr,
-      ];
+  // Determine rows per page: if rombelRows.length <= 2, all fit comfortably on Page 1
+  const maxRowsPerPage = rombelRows.length <= 2 ? 2 : 2;
+  const gapBetweenRows = 3.8;
 
-      classes.forEach((cls, cIdx) => {
-        const colIdx = 3 + cIdx;
-        const entry = entries.find((e) => e.classId === cls.id && e.day === day && e.jpNo === jp);
-        if (entry) {
-          const sub = state.subjects.find((s) => s.id === entry.subjectId);
-          const tch = state.teachers.find((t) => t.id === entry.teacherId);
-          const sName = compact ? compactSubjectName(sub?.name ?? '', sub?.code) : (sub?.code ?? sub?.name ?? 'Mapel');
-          const tName = compact ? compactTeacherName(tch?.name ?? '', tch?.code) : (tch?.code ?? tch?.name ?? '—');
-          rowCells.push(`${sName}\n(${tName})`);
-          if (!cellSubjectMap[currentRowIdx]) cellSubjectMap[currentRowIdx] = {};
-          cellSubjectMap[currentRowIdx][colIdx] = entry.subjectId;
-        } else {
-          rowCells.push('—');
-        }
+  // Calculate uniform height for class weekly blocks
+  const blockH = Math.min(
+    48,
+    Math.max(
+      38,
+      (availableMatrixHeight - (Math.min(rombelRows.length, maxRowsPerPage) - 1) * gapBetweenRows) /
+        Math.min(rombelRows.length, maxRowsPerPage),
+    ),
+  );
+
+  const marginX = 10;
+  const availableW = pageWidth - marginX * 2;
+
+  rombelRows.forEach((row, rIdx) => {
+    // If more rows than can fit on page 1, add a structured page break
+    if (rIdx > 0 && rIdx % maxRowsPerPage === 0) {
+      doc.addPage(getPaperDimensions(paperSize, 'landscape'), 'landscape');
+      currentY = 10;
+      if (options?.includeKop !== false && options?.kopSurat !== false) {
+        currentY = renderOfficialKopSurat(doc, state, 8, options, true);
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...TEAL);
+      doc.text(`${docTitle.toUpperCase()} (LANJUTAN)`, pageWidth / 2, currentY, { align: 'center' });
+      currentY += 5;
+    }
+
+    // Row Header Banner (Kelompok A, Kelompok B, etc.)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(15, 55, 50);
+    doc.text(`${row.label.toUpperCase()} · ${row.classes.map((c) => c.name).join(' | ')}`, marginX, currentY + 1.2);
+    currentY += 2.8;
+
+    const numCols = Math.max(1, row.classes.length);
+    const gapX = 3.5;
+    const blockW = (availableW - (numCols - 1) * gapX) / numCols;
+
+    // Render each class weekly block side-by-side
+    row.classes.forEach((cls, cIdx) => {
+      const blockX = marginX + cIdx * (blockW + gapX);
+      const blockY = currentY;
+      const classEntries = entries.filter((e) => e.classId === cls.id);
+
+      // 1. Block Title Bar
+      const titleH = 4.0;
+      doc.setFillColor(11, 52, 53); // Deep Teal
+      doc.roundedRect(blockX, blockY, blockW, titleH, 0.6, 0.6, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.8);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`Kelas ${cls.name}`, blockX + 2.5, blockY + 2.8);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(220, 238, 230);
+      doc.text(`Tingkat ${cls.level} · ${classEntries.length} JP`, blockX + blockW - 2.5, blockY + 2.8, { align: 'right' });
+
+      // 2. Day Sub-header
+      const subHeaderH = 3.2;
+      const subHeaderY = blockY + titleH;
+      doc.setFillColor(232, 243, 238);
+      doc.rect(blockX, subHeaderY, blockW, subHeaderH, 'F');
+
+      const jpW = paperSize === 'f4' ? 6.2 : 5.5;
+      const timeW = paperSize === 'f4' ? 12.0 : 10.8;
+      const dayW = (blockW - jpW - timeW) / activeDays.length;
+
+      // JP col header
+      doc.setDrawColor(210, 225, 218);
+      doc.setLineWidth(0.18);
+      doc.rect(blockX, subHeaderY, jpW, subHeaderH, 'D');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(4.8);
+      doc.setTextColor(11, 52, 53);
+      doc.text('JP', blockX + jpW / 2, subHeaderY + 2.2, { align: 'center' });
+
+      // Waktu col header
+      doc.rect(blockX + jpW, subHeaderY, timeW, subHeaderH, 'D');
+      doc.setFontSize(4.6);
+      doc.text('WAKTU', blockX + jpW + timeW / 2, subHeaderY + 2.2, { align: 'center' });
+
+      // Day cols headers
+      activeDays.forEach((day, dIdx) => {
+        const dX = blockX + jpW + timeW + dIdx * dayW;
+        doc.rect(dX, subHeaderY, dayW, subHeaderH, 'D');
+        doc.setFontSize(4.8);
+        doc.text(day.slice(0, 3).toUpperCase(), dX + dayW / 2, subHeaderY + 2.2, { align: 'center' });
       });
 
-      tableData.push(rowCells);
-      currentRowIdx++;
-    }
-  }
+      // 3. JP Rows
+      const headerH = titleH + subHeaderH;
+      const rowH = (blockH - headerH) / periods.length;
 
-  // Column width calculations scaled to available page width (A4: 297mm, F4: 330mm)
-  const availableWidth = pageWidth - 20; // 10mm left & right margins
-  const hariWidth = paperSize === 'f4' ? 18 : 16;
-  const jpWidth = 7;
-  const waktuWidth = paperSize === 'f4' ? 19 : 17;
-  const fixedWidth = hariWidth + jpWidth + waktuWidth;
-  const classColWidth = Math.max(16, (availableWidth - fixedWidth) / (classes.length || 1));
+      periods.forEach((jpNo, pIdx) => {
+        const rowY = blockY + headerH + pIdx * rowH;
 
-  const colStyles: Record<number, any> = {
-    0: { halign: 'center', cellWidth: hariWidth, fontStyle: 'bold', fillColor: [244, 248, 246] },
-    1: { halign: 'center', cellWidth: jpWidth, fontStyle: 'bold', fillColor: [248, 250, 249] },
-    2: { halign: 'center', cellWidth: waktuWidth, fillColor: [250, 251, 250] },
-  };
+        // JP No cell
+        doc.setFillColor(246, 250, 248);
+        doc.setDrawColor(215, 228, 222);
+        doc.setLineWidth(0.15);
+        doc.rect(blockX, rowY, jpW, rowH, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5.0);
+        doc.setTextColor(11, 52, 53);
+        doc.text(String(jpNo).padStart(2, '0'), blockX + jpW / 2, rowY + rowH * 0.65, { align: 'center' });
 
-  classes.forEach((_, idx) => {
-    colStyles[3 + idx] = { halign: 'center', cellWidth: classColWidth };
-  });
+        // Waktu cell
+        const refSlot = state.slots.find((s) => s.kind === 'TEACHING' && s.jpNo === jpNo);
+        const timeStr = refSlot ? `${refSlot.start}-${refSlot.end}` : '';
+        doc.setFillColor(250, 252, 251);
+        doc.rect(blockX + jpW, rowY, timeW, rowH, 'FD');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(4.2);
+        doc.setTextColor(85, 100, 95);
+        doc.text(timeStr, blockX + jpW + timeW / 2, rowY + rowH * 0.65, { align: 'center' });
 
-  // Calculate dynamic compact sizing to guarantee 1 page
-  const totalRows = tableData.length;
-  const dynamicFontSize = totalRows > 44 ? 5.8 : totalRows > 36 ? 6.2 : 6.6;
-  const dynamicPadding = totalRows > 44 ? 0.6 : 0.8;
+        // Days cells
+        activeDays.forEach((day, dIdx) => {
+          const cellX = blockX + jpW + timeW + dIdx * dayW;
+          const slotDef = state.slots.find((s) => s.day === day && s.kind === 'TEACHING' && s.jpNo === jpNo);
+          const blocked = isSlotBlocked(slotDef);
 
-  autoTable(doc, {
-    startY: currentY,
-    head: [tableHeaders],
-    body: tableData,
-    theme: 'grid',
-    pageBreak: 'avoid',
-    headStyles: {
-      fillColor: TEAL,
-      textColor: 255,
-      fontSize: 7,
-      fontStyle: 'bold',
-      halign: 'center',
-      cellPadding: 1.5,
-      lineWidth: 0.2,
-      lineColor: [200, 215, 210],
-    },
-    bodyStyles: {
-      fontSize: dynamicFontSize,
-      halign: 'center',
-      valign: 'middle',
-      cellPadding: dynamicPadding,
-      textColor: [20, 35, 33],
-      lineWidth: 0.2,
-      lineColor: [215, 225, 220],
-    },
-    columnStyles: colStyles,
-    didParseCell: (data) => {
-      if (data.section === 'body' && data.column.index >= 3) {
-        const subId = cellSubjectMap[data.row.index]?.[data.column.index];
-        if (subId && colorize) {
-          const subject = state.subjects.find((s) => s.id === subId);
-          if (subject?.color) {
-            const { bg, text } = getPrintableCellColor(subject.color);
-            data.cell.styles.fillColor = bg;
-            data.cell.styles.textColor = text;
-            data.cell.styles.fontStyle = 'bold';
+          if (blocked) {
+            // Non-KBM activity
+            const actType = (slotDef?.activityType || 'ISTIRAHAT').toUpperCase();
+            let actBg: [number, number, number] = [254, 248, 230]; // warm yellow for istirahat
+            let actBorder: [number, number, number] = [230, 205, 140];
+            let actText: [number, number, number] = [130, 95, 30];
+            let actShort = 'ISTIRAHAT';
+
+            if (actType.includes('UPACARA')) {
+              actBg = [253, 242, 240];
+              actBorder = [235, 185, 178];
+              actText = [160, 60, 48];
+              actShort = 'UPACARA';
+            } else if (actType.includes('RELIGI') || actType.includes('SHOLAT')) {
+              actBg = [247, 239, 253];
+              actBorder = [218, 190, 242];
+              actText = [99, 43, 142];
+              actShort = 'RELIGI';
+            }
+
+            doc.setFillColor(...actBg);
+            doc.setDrawColor(...actBorder);
+            doc.setLineWidth(0.15);
+            doc.rect(cellX, rowY, dayW, rowH, 'FD');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(4.2);
+            doc.setTextColor(...actText);
+            if (doc.getTextWidth(actShort) > dayW - 0.5) actShort = actShort.slice(0, 4);
+            doc.text(actShort, cellX + dayW / 2, rowY + rowH * 0.65, { align: 'center' });
+          } else {
+            // KBM slot
+            const entry = entries.find((e) => e.classId === cls.id && e.day === day && e.jpNo === jpNo);
+            if (!entry) {
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(220, 230, 225);
+              doc.setLineWidth(0.15);
+              doc.rect(cellX, rowY, dayW, rowH, 'FD');
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(4.8);
+              doc.setTextColor(180, 195, 190);
+              doc.text('—', cellX + dayW / 2, rowY + rowH * 0.65, { align: 'center' });
+            } else {
+              const subject = state.subjects.find((s) => s.id === entry.subjectId);
+              const teacher = state.teachers.find((t) => t.id === entry.teacherId);
+
+              let cellBg: [number, number, number] = [246, 250, 248];
+              let cellText: [number, number, number] = [17, 50, 48];
+
+              if (colorize && subject?.color) {
+                const printable = getPrintableCellColor(subject.color);
+                cellBg = printable.bg;
+                cellText = printable.text;
+              }
+
+              doc.setFillColor(...cellBg);
+              doc.setDrawColor(215, 228, 222);
+              doc.setLineWidth(0.15);
+              doc.rect(cellX, rowY, dayW, rowH, 'FD');
+
+              // Line 1: Subject Name
+              let subLabel = compact ? compactSubjectName(subject?.name || '', subject?.code) : (subject?.name || 'Mapel');
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(4.6);
+              doc.setTextColor(...cellText);
+              if (doc.getTextWidth(subLabel) > dayW - 0.6) {
+                subLabel = subject?.code || subLabel.slice(0, 5);
+              }
+              doc.text(subLabel, cellX + dayW / 2, rowY + rowH * 0.44, { align: 'center' });
+
+              // Line 2: Teacher Name
+              let tchLabel = compact ? compactTeacherName(teacher?.name || '', teacher?.code) : (teacher?.name || '—');
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(3.7);
+              doc.setTextColor(Math.min(cellText[0] + 35, 110), Math.min(cellText[1] + 35, 120), Math.min(cellText[2] + 35, 115));
+              if (doc.getTextWidth(tchLabel) > dayW - 0.6) {
+                tchLabel = teacher?.code || tchLabel.slice(0, 6);
+              }
+              doc.text(tchLabel, cellX + dayW / 2, rowY + rowH * 0.82, { align: 'center' });
+            }
           }
-        }
-      }
-    },
-    margin: { left: 10, right: 10 },
+        });
+      });
+
+      // 4. Outer Class Block Border
+      doc.setDrawColor(11, 52, 53);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(blockX, blockY, blockW, blockH, 0.6, 0.6, 'D');
+    });
+
+    currentY += blockH + gapBetweenRows;
   });
 
-  const lastTableP1 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable;
-  let p1BottomY = Math.min(lastTableP1.finalY + 3, pageHeight - 16);
-
-  // Color Swatch Legend Strip
-  if (colorize && p1BottomY < pageHeight - 12) {
+  // Color Swatch Legend Strip & Non-KBM Activity indicators
+  let legendY = Math.min(currentY + 1, pageHeight - 16);
+  if (colorize && legendY < pageHeight - 13) {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6);
+    doc.setFontSize(5.8);
     doc.setTextColor(11, 52, 53);
-    doc.text('LEGENDA WARNA MAPEL:', 10, p1BottomY);
-    p1BottomY += 2.2;
+    doc.text('LEGENDA MAPEL & KEGIATAN:', marginX, legendY);
+    legendY += 2.4;
 
-    let curLegendX = 10;
+    let curLegendX = marginX;
     const activeSubjects = state.subjects.filter((s) => s.isActive);
     for (const sub of activeSubjects) {
       const { bg, text } = getPrintableCellColor(sub.color || '#2f7771');
       const label = `${sub.code}: ${compactSubjectName(sub.name, sub.code)}`;
-      doc.setFontSize(5.5);
+      doc.setFontSize(5.2);
       doc.setFont('helvetica', 'normal');
       const textWidth = doc.getTextWidth(label);
       const pillWidth = textWidth + 5;
 
-      if (curLegendX + pillWidth > pageWidth - 10) {
-        curLegendX = 10;
-        p1BottomY += 3;
-        if (p1BottomY > pageHeight - 6) break;
+      if (curLegendX + pillWidth > pageWidth - marginX) {
+        curLegendX = marginX;
+        legendY += 3.2;
+        if (legendY > pageHeight - 8) break;
       }
 
       doc.setFillColor(...bg);
       doc.setDrawColor(...text);
       doc.setLineWidth(0.2);
-      doc.roundedRect(curLegendX, p1BottomY - 1.8, pillWidth, 2.6, 0.6, 0.6, 'FD');
+      doc.roundedRect(curLegendX, legendY - 1.8, pillWidth, 2.6, 0.5, 0.5, 'FD');
 
       doc.setTextColor(...text);
-      doc.text(label, curLegendX + 2.5, p1BottomY);
+      doc.text(label, curLegendX + 2.5, legendY);
       curLegendX += pillWidth + 2.5;
     }
+
+    // Activity Badges
+    const actBadges = [
+      { label: 'ISTIRAHAT', bg: [254, 248, 230], border: [230, 205, 140], text: [130, 95, 30] },
+      { label: 'UPACARA', bg: [253, 242, 240], border: [235, 185, 178], text: [160, 60, 48] },
+      { label: 'SHOLAT / RELIGI', bg: [247, 239, 253], border: [218, 190, 242], text: [99, 43, 142] },
+    ];
+
+    actBadges.forEach((act) => {
+      doc.setFontSize(5.0);
+      doc.setFont('helvetica', 'bold');
+      const w = doc.getTextWidth(act.label) + 5;
+      if (curLegendX + w < pageWidth - marginX) {
+        doc.setFillColor(...(act.bg as [number, number, number]));
+        doc.setDrawColor(...(act.border as [number, number, number]));
+        doc.setLineWidth(0.2);
+        doc.roundedRect(curLegendX, legendY - 1.8, w, 2.6, 0.5, 0.5, 'FD');
+        doc.setTextColor(...(act.text as [number, number, number]));
+        doc.text(act.label, curLegendX + 2.5, legendY);
+        curLegendX += w + 2.5;
+      }
+    });
   }
 
-  // Notice about Page 2
-  if (p1BottomY + 3.5 < pageHeight - 5) {
+  // Official Note
+  if (legendY + 3.2 < pageHeight - 7) {
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
-    doc.setTextColor(90, 110, 105);
+    doc.setFontSize(5.8);
+    doc.setTextColor(85, 105, 100);
     doc.text(
-      `* Catatan: 1 JP = ${periodMinutes} menit waktu efektif KBM. Lembar rekapitulasi beban mengajar guru & pengesahan resmi tercantum pada Halaman 2.`,
-      10,
-      p1BottomY + 3.5,
+      `* Catatan: 1 JP = ${periodMinutes} menit waktu efektif KBM. Jadwal terstruktur per kelompok rombel paralel. Lembar rekapitulasi alokasi & pengesahan tercantum pada halaman berikutnya.`,
+      marginX,
+      legendY + 3.2,
     );
   }
 
@@ -1501,24 +1559,30 @@ export function exportAllClassesSinglePageA4PDF(
       '100% Terdistribusi',
     ]);
 
+    const availRecapW = pageWidth - 20;
+    const nonClassWidth = 162;
+    const classColW = Math.max(9, (availRecapW - nonClassWidth) / (classes.length || 1));
+    const totalCalcW = nonClassWidth + classes.length * classColW;
+    const scaleFactor = totalCalcW > availRecapW ? availRecapW / totalCalcW : 1.0;
+
     const recapColStyles: Record<number, any> = {
-      0: { halign: 'center', cellWidth: 7 },
-      1: { halign: 'center', cellWidth: 12 },
-      2: { halign: 'left', cellWidth: 42, fontStyle: 'bold' },
-      3: { halign: 'left', cellWidth: 32 },
-      4: { halign: 'left', cellWidth: 38 },
+      0: { halign: 'center', cellWidth: 6 * scaleFactor },
+      1: { halign: 'center', cellWidth: 10 * scaleFactor },
+      2: { halign: 'left', cellWidth: 34 * scaleFactor, fontStyle: 'bold' },
+      3: { halign: 'left', cellWidth: 24 * scaleFactor },
+      4: { halign: 'left', cellWidth: 30 * scaleFactor },
     };
 
     let nextCol = 5;
     classes.forEach(() => {
-      recapColStyles[nextCol] = { halign: 'center', cellWidth: 13 };
+      recapColStyles[nextCol] = { halign: 'center', cellWidth: classColW * scaleFactor };
       nextCol++;
     });
 
-    recapColStyles[nextCol] = { halign: 'center', cellWidth: 16, fontStyle: 'bold' }; // Total JP
-    recapColStyles[nextCol + 1] = { halign: 'center', cellWidth: 14 }; // Maks JP
-    recapColStyles[nextCol + 2] = { halign: 'center', cellWidth: 16 }; // Jam Astro
-    recapColStyles[nextCol + 3] = { halign: 'center', cellWidth: 20 }; // Status
+    recapColStyles[nextCol] = { halign: 'center', cellWidth: 14 * scaleFactor, fontStyle: 'bold' }; // Total JP
+    recapColStyles[nextCol + 1] = { halign: 'center', cellWidth: 12 * scaleFactor }; // Maks JP
+    recapColStyles[nextCol + 2] = { halign: 'center', cellWidth: 14 * scaleFactor }; // Jam Astro
+    recapColStyles[nextCol + 3] = { halign: 'center', cellWidth: 18 * scaleFactor }; // Status
 
     autoTable(doc, {
       startY: p2Y,
@@ -1964,6 +2028,14 @@ export function exportAttendanceRecapPDF(
     overallPredikat,
   ]);
 
+  const availAttW = pageWidth - 28;
+  const isLand = orientation === 'landscape';
+  const baseColW = isLand
+    ? [8, 12, 52, 38, 14, 14, 12, 12, 12, 18, 17, 18, 28]
+    : [6, 10, 36, 24, 11, 11, 9, 9, 9, 15, 14, 15, 13];
+  const totalBaseW = baseColW.reduce((a, b) => a + b, 0);
+  const scale = availAttW / totalBaseW;
+
   autoTable(doc, {
     startY: currentY,
     head: [headers],
@@ -1984,19 +2056,19 @@ export function exportAttendanceRecapPDF(
       textColor: [20, 35, 33],
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 8 },
-      1: { halign: 'center', cellWidth: 14 },
-      2: { halign: 'left', cellWidth: orientation === 'landscape' ? 50 : 36 },
-      3: { halign: 'left', cellWidth: orientation === 'landscape' ? 38 : 28 },
-      4: { halign: 'center', cellWidth: 14 },
-      5: { halign: 'center', cellWidth: 14 },
-      6: { halign: 'center', cellWidth: 12 },
-      7: { halign: 'center', cellWidth: 12 },
-      8: { halign: 'center', cellWidth: 12 },
-      9: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
-      10: { halign: 'center', cellWidth: 16 },
-      11: { halign: 'center', cellWidth: 18, fontStyle: 'bold', fillColor: [240, 248, 243] },
-      12: { halign: 'center', cellWidth: orientation === 'landscape' ? 26 : 20 },
+      0: { halign: 'center', cellWidth: baseColW[0] * scale },
+      1: { halign: 'center', cellWidth: baseColW[1] * scale },
+      2: { halign: 'left', cellWidth: baseColW[2] * scale },
+      3: { halign: 'left', cellWidth: baseColW[3] * scale },
+      4: { halign: 'center', cellWidth: baseColW[4] * scale },
+      5: { halign: 'center', cellWidth: baseColW[5] * scale },
+      6: { halign: 'center', cellWidth: baseColW[6] * scale },
+      7: { halign: 'center', cellWidth: baseColW[7] * scale },
+      8: { halign: 'center', cellWidth: baseColW[8] * scale },
+      9: { halign: 'center', cellWidth: baseColW[9] * scale, fontStyle: 'bold' },
+      10: { halign: 'center', cellWidth: baseColW[10] * scale },
+      11: { halign: 'center', cellWidth: baseColW[11] * scale, fontStyle: 'bold', fillColor: [240, 248, 243] },
+      12: { halign: 'center', cellWidth: baseColW[12] * scale },
     },
     didParseCell: (data) => {
       if (data.row.index === tableData.length - 1) {

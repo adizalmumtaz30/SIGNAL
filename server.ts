@@ -1,12 +1,15 @@
 import cors from 'cors';
 import express, { type Request, type Response, type NextFunction } from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { GoogleGenAI } from '@google/genai';
 
 const app = express();
-const isProduction = process.env.NODE_ENV === 'production';
-const port = isProduction ? Number(process.env.PORT || 8080) : 3000;
 const rootDir = process.cwd();
+const distPath = path.resolve(rootDir, 'dist');
+const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+const port = Number(process.env.PORT) || 3000;
+const isProduction = process.env.NODE_ENV === 'production' || hasDist || Boolean(process.env.PORT && process.env.PORT !== '3000');
 const enableGemini = process.env.ENABLE_GEMINI_ASSISTANT === 'true';
 const apiKey = process.env.GEMINI_API_KEY?.trim();
 const corsOrigins = (process.env.CORS_ORIGIN || '').split(',').map((value) => value.trim()).filter(Boolean);
@@ -40,6 +43,10 @@ function rateLimit(req: Request, res: Response, next: NextFunction): void {
   current.count += 1;
   next();
 }
+
+app.get(['/healthz', '/health'], (_req: Request, res: Response) => {
+  res.status(200).send('OK');
+});
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ ok: true, app: 'SIGNAL', version: '1.2.0', aiAvailable: Boolean(ai) });
@@ -84,7 +91,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(rootDir, 'dist');
-    app.use(express.static(distPath, { index: false, maxAge: '1h' }));
+    app.use(express.static(distPath, { index: 'index.html', maxAge: '1h' }));
     app.use((req: Request, res: Response, next: NextFunction) => {
       if (req.method !== 'GET' || req.path.startsWith('/api/')) return next();
       res.sendFile(path.join(distPath, 'index.html'), (error) => {

@@ -74,7 +74,7 @@ export function SchedulePdfExportModal({
   const [website, setWebsite] = useState<string>(() => state.settings.website || 'www.mtscendekia.sch.id');
 
   // Document Title & Periods
-  const [documentTitle, setDocumentTitle] = useState<string>('JADWAL PELAJARAN SELURUH KELAS (SATU HALAMAN A4)');
+  const [documentTitle, setDocumentTitle] = useState<string>('JADWAL PELAJARAN SELURUH KELAS');
   const [academicYear, setAcademicYear] = useState<string>(() => state.settings.academicYear || '2026/2027');
   const [semester, setSemester] = useState<'Ganjil' | 'Genap'>(() => state.settings.semester || 'Ganjil');
   const [extraNotes, setExtraNotes] = useState<string>('');
@@ -124,7 +124,7 @@ export function SchedulePdfExportModal({
     setCoordinatorNip(state.settings.curriculumLeaderNip || '19820315 200901 2 008');
     setDocumentTitle(
       exportType === 'all_single_page'
-        ? 'JADWAL PELAJARAN SELURUH KELAS (SATU HALAMAN A4)'
+        ? 'JADWAL PELAJARAN SELURUH KELAS'
         : 'JADWAL PELAJARAN MINGGUAN',
     );
     onNotify('Seluruh isian teks dikembalikan ke data Pengaturan Madrasah.', 'info');
@@ -195,17 +195,17 @@ export function SchedulePdfExportModal({
       };
 
       if (exportType === 'all_single_page') {
-        // ⭐ Mode Rekomendasi Utama: Semua Kelas dalam Satu Halaman Landscape + Halaman Rekap Guru & TTD
+        // ⭐ Mode Rekomendasi Utama: Matriks Seluruh Kelas Terpadu (Blok Mingguan) + Halaman Rekap Guru & TTD
         exportAllClassesSinglePageA4PDF(state, {
           ...commonOverrides,
-          documentTitle: documentTitle.trim() || `JADWAL PELAJARAN SELURUH KELAS (${paperSize.toUpperCase()})`,
+          documentTitle: documentTitle.trim() || 'JADWAL PELAJARAN SELURUH KELAS',
           paperSize,
           colorizeSubjects,
           compactNames,
           includeKop,
           includeTeacherRecapPage: includeRecapPage,
         });
-        onNotify(`PDF Jadwal Semua Kelas (Kertas ${paperSize.toUpperCase()} Landscape) berhasil diunduh.`, 'success');
+        onNotify(`PDF Jadwal Seluruh Kelas (Kertas ${paperSize.toUpperCase()} Landscape) berhasil diunduh.`, 'success');
       } else if (exportType === 'class') {
         const options: WeeklyClassSchedulePdfOptions = {
           ...commonOverrides,
@@ -502,15 +502,15 @@ export function SchedulePdfExportModal({
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                 <Sparkles size={16} style={{ color: '#2f7771' }} />
                 <strong style={{ fontSize: '12.5px', color: '#0b3435' }}>
-                  Struktur Dokumen Cetak 1 Halaman {paperSize.toUpperCase()} Landscape + Rekapitulasi Guru:
+                  Struktur Dokumen Cetak Matriks Blok Seluruh Kelas ({paperSize.toUpperCase()} Landscape):
                 </strong>
               </div>
               <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '11.5px', color: '#435e58', lineHeight: 1.55 }}>
                 <li>
-                  <strong>Halaman 1 ({paperSize.toUpperCase()} Landscape):</strong> Seluruh kelas paralel ({activeClasses.map((c) => c.name).join(', ')}) disusun dalam 1 halaman utuh dengan pewarnaan sel sesuai warna mapel dan singkatan nama otomatis agar muat presisi.
+                  <strong>Halaman 1 ({paperSize.toUpperCase()} Landscape):</strong> Setiap kelas aktif ditampilkan sebagai blok jadwal mingguan utuh (Senin–Sabtu horizontal, JP vertikal), dikelompokkan secara paralel (Baris 1 Kelompok A, Baris 2 Kelompok B) lengkap dengan legenda mapel dan penanda kegiatan non-KBM.
                 </li>
                 <li>
-                  <strong>Halaman 2 (Lembar Terpisah):</strong> Tabel rekapitulasi beban JP seluruh guru madrasah beserta rincian per rombel dan <strong>kolom tanda tangan resmi di footer</strong>.
+                  <strong>Halaman 2 (Lampiran Resmi):</strong> Tabel rekapitulasi beban JP seluruh guru madrasah beserta rincian per rombel, ringkasan waktu astronomis, dan <strong>kolom tanda tangan resmi pengesahan</strong>.
                 </li>
               </ul>
             </div>

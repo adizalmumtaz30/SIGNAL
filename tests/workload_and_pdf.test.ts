@@ -109,14 +109,18 @@ describe('Ekspor PDF Jadwal & Rekap', () => {
       }),
     ).not.toThrow();
 
-    // Test exportAllClassesSinglePageA4PDF without colors and compact Kop
+    // Test exportAllClassesSinglePageA4PDF with F4 paper size
     expect(() =>
       exportAllClassesSinglePageA4PDF(state, {
-        colorizeSubjects: false,
-        compactNames: false,
-        kopSurat: false,
+        paperSize: 'f4',
+        colorizeSubjects: true,
+        compactNames: true,
+        documentTitle: 'Jadwal Seluruh Kelas F4 Folio',
       }),
     ).not.toThrow();
+
+    // Test exportScheduleMasterPDF with F4 paper size
+    expect(() => exportScheduleMasterPDF(state, { paperSize: 'f4' })).not.toThrow();
   });
 
   it('dapat menghasilkan dokumen Rekapitulasi Presensi Guru dengan kustomisasi teks dokumen resmi', () => {
