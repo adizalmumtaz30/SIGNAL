@@ -1,7 +1,7 @@
 # SIGNAL Redesign — Implementation Status
 
 Tanggal: 30 Oktober 2026  
-Branch: `redesign/islamic-bento-2026`
+Branch: `redesign/islamic-school-bento`
 
 ## Source baseline
 - React 19
@@ -16,7 +16,7 @@ Branch: `redesign/islamic-bento-2026`
 
 ## Scope
 
-- [x] Branch redesign dibuat dari `ui/quiet-luxury-refresh`.
+- [x] Branch redesign dibuat dari `main` (commit 5055c27).
 - [x] Audit dan keputusan produk/UI/UX dikonsolidasikan.
 - [x] Design system dan reference traceability didokumentasikan.
 - [x] Google AI Studio handoff ditulis.
