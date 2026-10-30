@@ -63,6 +63,7 @@ import type {
 import { DAYS } from './domain/types';
 import {
   buildTimeSlots,
+  findActiveTeachingSlot,
   clockToMinutes,
   createDefaultPeriodDefinitions,
   isSlotBlocked,
@@ -313,12 +314,10 @@ export default function App() {
     if (!workspace) return;
     if (source.day === target.day && source.jpNo === target.jpNo) return;
 
-    // 1. Check if target slot is a blocked activity (Upacara, Istirahat, Religi, Kegiatan Lain)
-    const targetSlotDef = workspace.slots.find(
-      (s) => s.day === target.day && (s.order === target.jpNo || (s.kind === 'TEACHING' && s.jpNo === target.jpNo)),
-    );
-    if (isSlotBlocked(targetSlotDef)) {
-      notify(`Tidak dapat dipindahkan: Jam tersebut diblokir oleh kegiatan ${targetSlotDef?.label || 'non-KBM'}.`, 'error');
+    // Resolve by KBM period number only. Activity order includes non-KBM rows and is not a JP number.
+    const targetSlotDef = findActiveTeachingSlot(workspace.slots, target.day, target.jpNo);
+    if (!targetSlotDef) {
+      notify(`Tidak dapat dipindahkan: ${target.day} JP ${target.jpNo} bukan slot KBM aktif.`, 'error');
       return;
     }
 
@@ -385,6 +384,10 @@ export default function App() {
 
   const openSlotEditor = (classId: string, day: Day, jpNo: number) => {
     if (!workspace) return;
+    if (!findActiveTeachingSlot(workspace.slots, day, jpNo)) {
+      notify(`Editor tidak tersedia: ${day} JP ${jpNo} bukan slot KBM aktif.`, 'warning');
+      return;
+    }
     const entry = getEntry(workspace, classId, day, jpNo);
     setEditingSlot({ classId, day, jpNo });
     setEditingSubject(entry?.subjectId ?? '');
@@ -395,6 +398,11 @@ export default function App() {
     event.preventDefault();
     if (!workspace || !editingSlot) return;
     const { classId, day, jpNo } = editingSlot;
+    if (!findActiveTeachingSlot(workspace.slots, day, jpNo)) {
+      setEditingSlot(null);
+      notify(`Perubahan ditolak: ${day} JP ${jpNo} bukan slot KBM aktif.`, 'error');
+      return;
+    }
     updateWorkspace((current) => {
       const previous = current.draft ?? current.activeSchedule ?? [];
       const without = previous.filter((entry) => !(entry.classId === classId && entry.day === day && entry.jpNo === jpNo));
