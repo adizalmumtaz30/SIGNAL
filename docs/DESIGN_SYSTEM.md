@@ -1,13 +1,13 @@
-# SIGNAL Design System — Islamic School Bento
+# SIGNAL Design System — School Workspace (No Bento)
 
-Status: arah implementasi visual aktif, berdasarkan mockup gambar dashboard madrasah terbaru.  
+Status: arah storyboard terbaru menggantikan eksperimen Bento. Visual mengacu pada mockup storyboard terakhir dan ilustrasi bangunan sekolah konvensional.  
 Bukan Atelier Luxury. Bukan Quiet Luxury lama. Bukan HTML prototype terdahulu.
 
 ## 1. Design thesis
 
-**A calm, welcoming academic operations workspace.** SIGNAL harus terasa seperti ruang kerja modern untuk operator madrasah: teratur, hangat, tepercaya, hidup dengan ilustrasi sekolah Islam, namun tetap sangat jelas untuk data jadwal.
+**A calm, precise academic operations workspace.** SIGNAL harus terasa seperti ruang kerja operator sekolah: teratur, jelas, dan efisien. Ilustrasi kampus sekolah menjadi identitas pendukung; data jadwal tetap menjadi fokus.
 
-Satu identitas, lima pengaruh yang dipakai pada tempat yang tepat:
+Satu identitas, empat pengaruh yang dipakai selektif:
 
 | Model | Penerapan | Tidak digunakan untuk |
 |---|---|---|
@@ -15,7 +15,7 @@ Satu identitas, lima pengaruh yang dipakai pada tempat yang tepat:
 | Flat design | Surface utama, navigasi, tabel, status, struktur konten | Membuat semua area datar tanpa hierarki |
 | Minimalism | Microcopy, toolbar, spacing, pengurangan dekorasi | Menghilangkan informasi domain penting |
 | Material Design | Hierarki tindakan, state, feedback, dialog, focus, elevation bertingkat | Menyalin komponen material generik mentah |
-| Bento UI 2026 | Dashboard ringkasan modular, prioritas konten, layout responsif | Memecah setiap baris tabel menjadi kartu |
+| Storyboard presentation | Frame bernomor untuk memperlihatkan perjalanan 11 layar pada satu lembar | Dipakai sebagai layout produk atau Bento Grid |
 
 ## 2. Visual direction
 
@@ -26,7 +26,7 @@ Satu identitas, lima pengaruh yang dipakai pada tempat yang tepat:
 - Status: success hijau, warning amber, danger coral/red, info blue; selalu disertai teks/icon, tidak hanya warna.
 - Border tipis dan jelas; shadow diffuse yang ringan, tidak seperti kaca/glassmorphism.
 - Radius menengah konsisten (10–18px), jangan semua pill.
-- Ilustrasi: original vector flat editorial, masjid/madrasah, kubah, minaret, pepohonan, siswa/buku. Gunakan sebagai layer pendukung dengan opacity/gradient/mask agar teks dan data tetap kontras.
+- Ilustrasi: SVG flat editorial berupa bangunan sekolah konvensional (gedung kelas bertingkat, jendela, pintu masuk, halaman, pepohonan, dan siswa). Tidak ada masjid, kubah, atau menara/minaret.
 - Ornamen sidebar: motif lengkung/arch, daun/geometry, silhouette sekolah. Tidak menutup navigasi.
 - Footer: compact, deep teal/muted green; identitas SIGNAL, local status/version, bantuan/dokumentasi/kontak jika target tersedia. Jangan membuat tautan palsu yang tidak berfungsi.
 
@@ -49,11 +49,11 @@ Satu identitas, lima pengaruh yang dipakai pada tempat yang tepat:
 - Jangan gunakan emoji sebagai pengganti ikon.
 - Hindari ikon dekoratif tanpa makna dan kombinasi glyph acak.
 
-## 5. Layout & Bento rules
+## 5. Layout — standard workspace, no Bento Grid
 
-- Dashboard: hero/greeting + KPI + jadwal/overview + validasi + beban + alokasi + presensi + data/riwayat + export/settings. Susunan mengikuti prioritas kerja, bukan semua kartu sama besar.
+- Dashboard: shell admin standar. Satu area kerja utama dengan greeting/hero yang ringkas, KPI seperlunya, agenda, dan tindakan prioritas. Jangan pecah seluruh informasi menjadi grid kartu.
 - Jadwal: grid kronologis sebagai artefak utama; non-KBM muncul di urutan waktu; JP KBM diberi nomor terpisah.
-- Matriks seluruh kelas: kelompokkan kelas per tingkat/paralel; tampilkan ringkasan per kelas; gunakan horizontal scroll hanya di viewport tabel, bukan body.
+- Matriks seluruh kelas: kelompokkan kelas per tingkat/paralel; tampilkan ringkasan per kelas; gunakan horizontal scroll hanya di viewport tabel, bukan body. Struktur matriks bukan kumpulan kartu.
 - Presensi: date/period + action utama + status ringkas + tab; hindari paragraf instruksi panjang.
 - Data Master: tabs/filter/search/table; responsive row detail/stacking untuk layar kecil.
 - Generator: status pencarian, constraints, hasil/kandidat, action pilih kandidat; tidak menyisipkan AI assistant.
@@ -88,6 +88,8 @@ Satu identitas, lima pengaruh yang dipakai pada tempat yang tepat:
 - Tidak ada body-level horizontal overflow.
 
 ## 9. Anti-slop checklist
+
+- Tidak menggunakan Bento Grid sebagai sistem layout produk; storyboard bernomor hanya media presentasi multi-layar.
 
 - Tidak ada gradient/glow/glass/neumorphic emboss sebagai dekorasi massal.
 - Tidak ada kartu untuk setiap elemen data.
