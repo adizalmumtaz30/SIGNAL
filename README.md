@@ -1,6 +1,6 @@
 # SIGNAL — Google AI Studio Project v1.2
 
-Aplikasi workspace penjadwalan pelajaran MTs berbahasa Indonesia. Project source code ini menggunakan React + TypeScript + Vite, penyimpanan lokal IndexedDB, generator pencarian deterministik, dan validator hard-constraint. UI dibuat khusus dengan gaya Deep Teal, warm ivory, dan aksen brass; bukan template dashboard default.
+Aplikasi workspace penjadwalan pelajaran MTs berbahasa Indonesia. Project source code ini menggunakan React + TypeScript + Vite, penyimpanan lokal IndexedDB, generator pencarian deterministik, dan validator hard-constraint. Arah visual aktif: Islamic School Bento berdasarkan mockup gambar dashboard madrasah terbaru — pale mint, teal/emerald, ilustrasi sekolah Islam, dan komposisi bento selektif. Bukan Atelier Luxury atau Quiet Luxury. Lihat dokumen di `docs/`.
 
 ## Status
 
@@ -12,9 +12,9 @@ Ini adalah **implementasi MVP yang dapat dibangun**, bukan klaim bahwa seluruh s
 - Menambahkan pengaturan tanggal hari libur; tanggal libur dikecualikan dari input massal bulanan dan hitungan hari kerja pada rekap. Catatan individual khusus pada hari libur tetap dapat disimpan setelah konfirmasi.
 - Catatan absensi dan daftar hari libur disimpan pada IndexedDB lokal terpisah agar perubahan tidak mengganggu penyimpanan jadwal lama. Data tidak tersinkron antar perangkat. Detail alur dan uji penerimaan: `docs/FEATURE_ABSENSI_GURU.md`.
 
-## Pembaruan v1.1
+## Riwayat arah visual v1.1
 
-- Penyempurnaan gaya visual menuju quiet luxury: palet lebih tenang, ornamen dan bayangan dikurangi, animasi lebih singkat.
+- Quiet Luxury adalah eksplorasi visual sebelumnya. Arah aktif kini digantikan Islamic School Bento berdasarkan mockup gambar madrasah terbaru; histori sebelumnya tetap dipertahankan.
 - Pilihan hari di UI kini mencakup Senin–Sabtu; default demo tetap Senin–Jumat.
 - Prompt implementasi bertahap untuk tipe slot aktivitas, laporan validasi cepat, drag-and-drop tervalidasi, statistik beban guru, dan ekspor PDF disertakan. Fitur-fitur tersebut harus diaudit dan diimplementasikan serta diuji di Google AI Studio; keberadaannya dalam prompt bukan bukti bahwa semuanya sudah tersedia di kode.
 
