@@ -9,8 +9,8 @@ Dokumen ini menggabungkan hasil diskusi, rekaman aplikasi, pemeriksaan PDF, audi
 
 ## 1. Ringkasan keputusan yang mengikat
 
-1. Arah visual aktif adalah **mockup gambar dashboard madrasah terbaru** yang menampilkan sidebar hijau, ilustrasi kampus/madrasah Islam, hero landscape, permukaan putih-mint, teal, aksen hangat, jadwal mingguan, ringkasan, dan kartu-kartu fungsional. Mockup ini menggantikan arah visual sebelumnya.
-2. Kombinasi gaya: **Neumorphism + Flat Design + Minimalism + Material Design + Bento UI 2026**, diterapkan secara selektif per komponen, bukan dicampur rata.
+1. Arah visual aktif adalah **mockup storyboard terakhir**: topbar terang, sidebar teal, ilustrasi bangunan sekolah, hero landscape, permukaan putih-mint, tabel, form, dan panel layar bernomor. Ilustrasi hanya gedung pendidikan konvensional; tidak ada masjid, kubah, atau minaret.
+2. Kombinasi gaya: **soft surface depth (sangat terbatas) + Flat Design + Minimalism + Material interaction hierarchy**. **Bento Grid dihapus dari konsep layout produk.**
 3. **Bukan Atelier Luxury**, bukan Quiet Luxury lama, dan bukan HTML prototype sebelumnya sebagai acuan visual.
 4. HTML prototype 5-in-1 hanya artefak eksplorasi interaksi; bukan sumber kebenaran visual.
 5. Visual dan layout boleh berubah drastis (target perubahan visual sekitar 95%), tetapi fitur, aturan domain, data, dan perilaku bisnis yang ada harus dipertahankan kecuali ada bug yang sengaja diperbaiki dan diuji.
@@ -21,6 +21,12 @@ Dokumen ini menggabungkan hasil diskusi, rekaman aplikasi, pemeriksaan PDF, audi
 10. Ilustrasi madrasah/sekolah Islam harus memperkaya beberapa area inti: sidebar bawah, hero dashboard, dan panel alokasi/generator bila relevan. Ilustrasi tidak boleh menutupi data atau mengganggu jadwal.
 11. UI harus hemat dependensi, murah dioperasikan, mudah dirawat, responsif, accessible, dan data-first.
 12. Jangan mengklaim skor 9+/10 sebelum pengujian visual, fungsional, responsive, keyboard, dan task usability dilakukan.
+
+## 1A. Keputusan lanjutan setelah review mockup storyboard
+
+- Bento Grid tidak digunakan sebagai layout produk. Frame 01–11 hanya susunan presentasi storyboard; ketika aplikasi dijalankan, pengguna berada pada satu layar kerja dalam shell sidebar + topbar standar.
+- Ilustrasi asset repo wajib hanya memperlihatkan bangunan sekolah. Hindari simbol arsitektur tempat ibadah.
+- Artefak terpisah tersedia sebagai wireframe dan high-fidelity storyboard, serta catatan desain yang menjelaskan pemetaan seluruh referensi.
 
 ## 2. Sumber diskusi dan artefak yang digabungkan
 
