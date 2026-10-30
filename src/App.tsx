@@ -656,7 +656,7 @@ export default function App() {
       <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
         <div className="brand-lockup">
           <div className="brand-mark"><span>S</span><i /></div>
-          <div className="brand-text"><strong>SIGNAL</strong><span>ACADEMIC STUDIO</span></div>
+          <div className="brand-text"><strong>SIGNAL</strong><span>SMART ISLAMIC SCHOOL SCHEDULER</span></div>
           <button className="icon-button sidebar-close" aria-label="Tutup menu" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         </div>
         <div className="workspace-chip">
@@ -711,7 +711,7 @@ export default function App() {
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { setMasterSearch(globalSearch); navigate('master'); } }}
-                placeholder="Cari kelas, guru, atau mapel…"
+                placeholder="Cari di Data Master: kelas, guru, atau mapel…"
               />
               <kbd><Command size={10} /> K</kbd>
             </div>
@@ -905,7 +905,7 @@ export default function App() {
           <footer className="app-footer">
             <span>© 2026 SIGNAL Academic Studio · Sistem Informasi Generasi Aturan & Logika</span>
             <span><span className="tiny-status-dot" /> Data tersimpan lokal di browser ini</span>
-            <span>Built for clarity, designed for calm.</span>
+            <span>“Bukan sekadar jadwal, tapi tentang masa depan generasi.”</span>
           </footer>
         </div>
       </main>
