@@ -18,9 +18,9 @@ Paket ini ditujukan sebagai source project React + TypeScript + Vite yang dapat 
 ## 3. Import workflow
 
 1. Unduh ZIP branch redesign dari GitHub:  
-   `https://github.com/adizalmumtaz30/SIGNAL/archive/refs/heads/redesign/islamic-bento-2026.zip`
+   `https://github.com/adizalmumtaz30/SIGNAL/archive/refs/heads/redesign/islamic-school-bento.zip`
 2. Ekstrak arsip.
-3. Buka Google AI Studio → Build mode dan pilih opsi import/upload project ZIP bila tersedia pada UI akun saat digunakan. Jika UI berubah atau upload ZIP tidak tersedia, gunakan source folder melalui workflow GitHub/import yang disediakan AI Studio.
+3. Buka Google AI Studio → Build mode → Import from GitHub dan pilih repository/branch yang berisi source ini. Jika branch tidak dapat dipilih dari UI, buat repository kerja dari arsip ZIP branch ini lalu jadikan branch sebagai `main` sebelum mengimpor. Jangan mengasumsikan upload ZIP langsung tersedia di semua akun.
 4. Minta AI Studio mempertahankan project structure dan domain code. Jangan meminta scaffold ulang dari nol.
 5. Install dependencies sesuai package manager/lockfile. Gunakan Node 20+ sesuai engines.
 6. Jalankan build dan tests sebelum melakukan perubahan lanjutan.
