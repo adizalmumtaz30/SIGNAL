@@ -30,7 +30,7 @@ describe('struktur waktu KBM', () => {
     expect(jp2?.order).toBe(4);
     expect(jp2?.jpNo).toBe(2);
     expect(findActiveTeachingSlot(slots, 'Senin', 3)).toBeUndefined();
-    expect(findActiveTeachingSlot(slots, 'Minggu' as never, 1)).toBeUndefined();
+    expect(findActiveTeachingSlot(slots, 'Senin', 99)).toBeUndefined();
   });
 
   it('tidak menghasilkan jam yang tumpang tindih ketika banyak jeda dipilih', () => {
