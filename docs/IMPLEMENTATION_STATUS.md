@@ -20,8 +20,10 @@ Branch: `redesign/islamic-bento-2026`
 - [x] Audit dan keputusan produk/UI/UX dikonsolidasikan.
 - [x] Design system dan reference traceability didokumentasikan.
 - [x] Google AI Studio handoff ditulis.
-- [ ] Implementasi visual ke seluruh screen selesai.
-- [ ] Audit P0 drag/drop dan editor target diperbaiki + test.
+- [x] Visual layer awal ditambahkan: token, warna, surface, ilustrasi lokal, footer, font, dan navigasi.
+- [x] P0 mapping drag/drop dan editor target diberi guard active TEACHING slot.
+- [x] Regression test JP mapping vs activity order ditambahkan.
+- [ ] Implementasi visual ke seluruh screen selesai dan direview pada browser.
 - [ ] Matriks aktivitas non-KBM diverifikasi.
 - [ ] Presensi Guru direview seluruh tab.
 - [ ] PDF anomaly direproduksi/ditutup.
