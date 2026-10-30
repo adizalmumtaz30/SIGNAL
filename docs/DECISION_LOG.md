@@ -29,11 +29,11 @@
 
 ## Keputusan implementasi teknis
 
-- Branch baru: `redesign/islamic-bento-2026`, dibuat dari `ui/quiet-luxury-refresh`.
+- Branch aktif: `redesign/islamic-school-bento`, dibuat langsung dari `main` agar seluruh perubahan terbaru repo ikut terbawa. Branch percobaan `redesign/islamic-bento-2026` berbasis branch lama dan bukan branch final.
 - Domain engine, validator, generator, storage, PDF export, attendance, and data models dipertahankan.
 - Tambah visual layer terpisah agar desain bisa diiterasi tanpa mengubah domain.
 - SVG ilustrasi lokal agar tidak butuh request eksternal.
 - CSS tokens dan import terpisah untuk memudahkan rollback/maintenance.
-- P0 mapping target DnD/editor diperbaiki dengan helper yang mencari active TEACHING slot berdasarkan JP number, bukan activity order.
+- P0 mapping target DnD/editor pada branch final diperbaiki dengan helper yang mencari active TEACHING slot berdasarkan JP number, bukan activity order.
 - Tambah regression test untuk slot non-KBM di antara slot KBM.
 - Build/test belum dinyatakan lulus sampai dijalankan di lingkungan project.
