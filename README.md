@@ -1,6 +1,11 @@
 # SIGNAL — Google AI Studio Project v1.2
 
-Aplikasi workspace penjadwalan pelajaran MTs berbahasa Indonesia. Project source code ini menggunakan React + TypeScript + Vite, penyimpanan lokal IndexedDB, generator pencarian deterministik, dan validator hard-constraint. Arah visual aktif: Islamic School Bento berdasarkan mockup gambar dashboard madrasah terbaru — pale mint, teal/emerald, ilustrasi sekolah Islam, dan komposisi bento selektif. Bukan Atelier Luxury atau Quiet Luxury. Lihat dokumen di `docs/`.
+Aplikasi workspace penjadwalan pelajaran MTs berbahasa Indonesia. Project source code ini menggunakan React + TypeScript + Vite, penyimpanan lokal IndexedDB, generator pencarian deterministik, dan validator hard-constraint. Arah visual aktif: School Workspace Storyboard berdasarkan mockup terakhir — pale mint, teal/emerald, ilustrasi gedung sekolah, struktur workspace standar, tanpa Bento Grid. Bukan Atelier Luxury atau Quiet Luxury. Lihat dokumen di `docs/`.
+
+## Design artifacts
+
+- Wireframe dan storyboard hi-fi disusun terpisah dari source app. Lihat `docs/STORYBOARD_DESIGN_NOTES.md` untuk prinsip layout dan keterlacakan referensi.
+- Panel bernomor pada storyboard adalah frame presentasi untuk 11 layar, bukan komponen Bento Grid di aplikasi.
 
 ## Status
 
@@ -14,7 +19,7 @@ Ini adalah **implementasi MVP yang dapat dibangun**, bukan klaim bahwa seluruh s
 
 ## Riwayat arah visual v1.1
 
-- Quiet Luxury adalah eksplorasi visual sebelumnya. Arah aktif kini digantikan Islamic School Bento berdasarkan mockup gambar madrasah terbaru; histori sebelumnya tetap dipertahankan.
+- Quiet Luxury adalah eksplorasi visual sebelumnya. Arah aktif kini digantikan School Workspace Storyboard tanpa Bento Grid, menggunakan ilustrasi sekolah konvensional; histori sebelumnya tetap dipertahankan.
 - Pilihan hari di UI kini mencakup Senin–Sabtu; default demo tetap Senin–Jumat.
 - Prompt implementasi bertahap untuk tipe slot aktivitas, laporan validasi cepat, drag-and-drop tervalidasi, statistik beban guru, dan ekspor PDF disertakan. Fitur-fitur tersebut harus diaudit dan diimplementasikan serta diuji di Google AI Studio; keberadaannya dalam prompt bukan bukti bahwa semuanya sudah tersedia di kode.
 
