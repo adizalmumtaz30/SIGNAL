@@ -2,8 +2,8 @@
 
 Tanggal konsolidasi: 30 Oktober 2026  
 Repo: `adizalmumtaz30/SIGNAL`  
-Basis kode: `ui/quiet-luxury-refresh`  
-Branch redesign: `redesign/islamic-bento-2026`
+Basis kode: `main` (commit `5055c27df53cc6f354cb774c3ec13f7470e60cef`)  
+Branch redesign: `redesign/islamic-school-bento`
 
 Dokumen ini menggabungkan hasil diskusi, rekaman aplikasi, pemeriksaan PDF, audit source code, spesifikasi SIGNAL v1.2, arah visual terbaru, serta keputusan implementasi. Dokumen membedakan **observasi**, **risiko kode**, **keputusan**, dan **pekerjaan verifikasi** agar dugaan tidak berubah menjadi fakta.
 
@@ -82,7 +82,7 @@ Keputusan: sebelum menyimpan, editor harus memastikan slot hari/JP memang slot K
 **P0.3 Baris aktivitas non-KBM di matriks jadwal**
 Lokasi: `ScheduleScreen` sekitar baris 1480–1600.
 
-Risiko: baris matriks dibangun dari jumlah `teachingPeriodsPerDay`; aktivitas Upacara/Religi/Istirahat/Kegiatan Lain tidak selalu tampil sebagai baris kronologis yang tepat. Pemeriksaan blocked terhadap slot yang sudah TEACHING tidak cukup untuk merepresentasikan aktivitas non-KBM.
+Perbandingan rekaman 30 Oktober dengan source `main` menunjukkan mismatch yang perlu ditutup: rekaman menampilkan baris non-KBM tersendiri (mis. Upacara dan Istirahat), sedangkan `ScheduleScreen` pada source membangun baris matriks melalui `periods.map(jpNo)` dan lookup slot `kind === 'TEACHING'`. Cabang kode yang diaudit juga memanggil `isSlotBlocked` pada slot TEACHING. Jadi visual pada rekaman dan kode repo belum terbukti identik. Jangan menganggap non-KBM rows sudah selesai hanya dari rekaman.
 
 Keputusan: tampilkan seluruh slot kegiatan sesuai urutan waktu; bedakan label jam-ke, nomor JP KBM, waktu, jenis aktivitas, dan status terkunci. Non-KBM tidak dihitung sebagai JP KBM dan tidak dapat ditimpa pelajaran.
 
@@ -132,13 +132,13 @@ Keputusan: target teks data utama 12–14px, kontrol 12–13px, tabel umum 12–
 
 ## 5. Audit PDF dan data
 
-PDF jadwal yang diperiksa berformat F4 dan empat halaman. Catatan audit sebelumnya:
+PDF jadwal yang diperiksa pada sesi sebelumnya berformat F4 dan empat halaman. `main` kini memiliki pembaruan PDF yang lebih baru (termasuk file ekspor yang jauh lebih besar dan modal baru), sehingga temuan ini adalah histori/risiko regresi dan harus diuji ulang pada output branch saat ini. Catatan audit sebelumnya:
 - Judul menyebut “SATU HALAMAN A4” padahal dokumen F4 empat halaman.
 - Halaman pertama sebagian besar kosong dengan judul/footer.
 - Halaman 2–3 berisi jadwal; halaman 4 rekap.
 - Ada catatan halaman 3 yang menyebut rekap di halaman 2.
 - Dataset PDF yang terlihat berisi 166 JP dengan IX-A 6 dan IX-B 0; backup JSON berikutnya memuat 4 kelas/160 JP. Ini mungkin perbedaan dataset atau versi; belum boleh disimpulkan sebagai bug tanpa menyamakan snapshot.
-- Preview halaman lanjutan pada rekaman tampak menampilkan teks laporan ritel yang tidak relevan. Ini temuan visual yang harus direproduksi, bukan bukti final sumber kesalahan.
+- Preview halaman lanjutan pada rekaman lama tampak menampilkan teks laporan ritel yang tidak relevan. Ini temuan visual historis yang harus direproduksi pada output main terbaru, bukan bukti final sumber kesalahan.
 
 Keputusan:
 1. Uji PDF dari snapshot data yang diketahui dan unik.
