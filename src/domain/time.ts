@@ -201,3 +201,8 @@ export function isSlotBlocked(slot?: TimeSlot): boolean {
   if (!slot) return true;
   return slot.kind === 'BREAK' || (slot.activityType != null && slot.activityType !== 'KBM');
 }
+
+/** Resolve a real active KBM slot by its KBM period number. Never compare JP numbers with activity order. */
+export function findActiveTeachingSlot(slots: TimeSlot[], day: Day, jpNo: number): TimeSlot | undefined {
+  return slots.find((slot) => slot.day === day && slot.kind === 'TEACHING' && slot.active && slot.jpNo === jpNo);
+}
