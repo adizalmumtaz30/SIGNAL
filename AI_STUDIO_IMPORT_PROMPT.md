@@ -1,6 +1,9 @@
 # Prompt untuk Google AI Studio Build — SIGNAL v1.2
 
-Project ini adalah SIGNAL, aplikasi penjadwalan pelajaran MTs dengan menu Absensi Guru. Lakukan audit kode dan tes terlebih dahulu. Pertahankan fitur absensi yang sudah ditambahkan pada `src/features/AttendanceScreen.tsx`, `src/domain/attendance.ts`, dan `src/storage/attendance.ts`; perbaiki kekurangan yang ditemukan, jangan menghapus atau mengganti aplikasi dengan template baru.
+Project ini adalah SIGNAL, aplikasi penjadwalan pelajaran MTs dengan menu Presensi Guru. Source of truth kode ada pada struktur repo saat ini: `src/components/AttendanceScreen.tsx`, `src/domain/types.ts`, `src/storage/db.ts`, dan `src/App.tsx`. Pertahankan seluruh fitur yang sudah ada; jangan menghapus atau mengganti aplikasi dengan template baru.
+
+## Visual direction aktif — wajib diikuti
+Baca `docs/DESIGN_SYSTEM.md`, `docs/DECISION_LOG.md`, `docs/REDESIGN_AUDIT_AND_DECISIONS.md`, `docs/REFERENCE_TRACEABILITY.md`, dan `docs/SCREEN_AUDIT_MATRIX.md`. Visual source of truth adalah **mockup gambar dashboard madrasah terbaru**. Jangan gunakan Atelier Luxury, Quiet Luxury sebagai arah visual, atau HTML prototype terdahulu sebagai acuan. Terapkan selektif soft-neumorphism, flat design, minimalism, Material Design, dan Bento UI 2026. Larangan AI slop dan skeuomorphism tetap berlaku; neumorphism hanya elevation halus yang tidak mengurangi kontras. Gunakan DM Sans + Manrope dan lucide-react yang sudah tersedia. Ilustrasi SVG lokal `public/illustrations/madrasah-campus.svg` dapat digunakan secara hemat di hero/sidebar/area alokasi.
 
 ## Fitur Absensi Guru — jaga dan verifikasi implementasi
 1. Menu `Absensi Guru` terhubung dari navigasi utama.
@@ -13,7 +16,7 @@ Project ini adalah SIGNAL, aplikasi penjadwalan pelajaran MTs dengan menu Absens
 8. Status catatan: Hadir, Sakit, Izin, Alpa, Dinas luar. Catatan tanggal di luar hari aktif tidak dihitung di rekap, tapi jangan dihapus otomatis.
 
 ## Prioritas produk
-1. **UI luxury, modern, elegant**: tenang, eksklusif, matang, profesional. Gunakan Deep Teal, Warm Ivory, dan aksen Champagne/Brass secukupnya. Hindari gradien mencolok, emoji dekoratif, border tebal, terlalu banyak warna, efek glassmorphism, dan kartu berlebihan. Animasi singkat, halus, dan tidak menghambat pekerjaan. Hormati `prefers-reduced-motion`.
+1. **UI Islamic School Bento**: ikuti mockup gambar madrasah terbaru. Gunakan pale mint/warm white, teal/emerald, sage, aksen amber secukupnya, ilustrasi editorial flat sekolah Islam di area inti, sidebar berornamen halus, dan bento hanya untuk ringkasan. Soft-neumorphism sangat terbatas. Hindari AI slop, skeuomorphism, glassmorphism, glow, gradient berlebihan, emoji dekoratif, border tebal, dan kartu tanpa hierarki. Hormati `prefers-reduced-motion`.
 2. **Alur operator ringkas**: tombol utama jelas, minim klik, sedikit scroll, bahasa Indonesia sehari-hari. Ringkasan dahulu; rincian melalui “Lihat detail”. Kelompokkan data serupa dan gunakan pencarian/filter/paginasi bila diperlukan. Jangan membuat bagian rekomendasi atau panel rekomendasi baru; fokus pada peningkatan UI dan alur kerja inti.
 3. **Hari aktif**: Senin–Sabtu dapat dipilih dari Pengaturan. Sabtu tidak harus aktif secara default. Pastikan validator, generator, kapasitas, header jadwal, laporan, dan pengujian mengikuti hari aktif yang dipilih.
 4. **Tipe slot waktu**: operator dapat menentukan tipe per slot/jam ke-: Belajar Mengajar, Upacara, Istirahat, Religi, atau Kegiatan Lain. Pisahkan nomor urut “Jam ke-” dari JP KBM. Hanya slot bertipe Belajar Mengajar yang dihitung sebagai JP kebutuhan/beban guru dan menjadi tempat penempatan mapel. Tipe lain harus punya label dan rentang waktu; perubahan skema perlu migrasi aman dan pengujian. Jangan mengubah data lama diam-diam.
