@@ -147,3 +147,43 @@ body{background:#f3faf6;color:var(--ink);font-family:'DM Sans',system-ui,sans-se
  .schedule-table-wrap{overflow-x:auto;max-width:100%}
 }
 @media(prefers-reduced-motion:reduce){.nav-item,.button,.icon-button,*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* Dashboard bento additions — data is derived from the existing workspace state */
+.hero-text{position:relative;z-index:2}
+.hero-art{position:relative;z-index:2;overflow:hidden}
+.overview-bento{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(260px,.85fr);gap:14px;margin-top:14px;align-items:stretch}
+.overview-schedule-card{min-width:0;overflow:hidden}
+.overview-class-label{display:flex;align-items:center;gap:7px;color:#276c63;font-size:11px;font-weight:700;margin:-2px 0 11px}
+.overview-class-label span{color:#8aa19d;font-weight:400;font-size:10px;margin-left:4px}
+.overview-schedule-scroll{max-width:100%;overflow-x:auto;border:1px solid #e6f0eb;border-radius:11px}
+.overview-schedule-table{width:100%;min-width:480px;border-collapse:separate;border-spacing:0;table-layout:fixed}
+.overview-schedule-table th{background:#eff8f3;color:#62827c;font-size:10px;font-weight:700;padding:9px 7px;text-align:center;border-bottom:1px solid #e2eee7}
+.overview-schedule-table th:first-child{width:56px}
+.overview-schedule-table td{padding:5px;border-bottom:1px solid #edf3ef;border-right:1px solid #f0f4f1;vertical-align:middle}
+.overview-schedule-table tbody tr:last-child td,.overview-schedule-table tbody tr:last-child th{border-bottom:0}
+.overview-schedule-table tbody th{background:#f8fbf9;text-align:center}
+.overview-schedule-table tbody th strong{display:block;font:700 12px 'Manrope',sans-serif;color:#2c6b61}
+.overview-schedule-table tbody th small{display:block;font-size:9px;color:#91a5a0;font-weight:500;margin-top:2px}
+.overview-subject-chip{display:flex;flex-direction:column;gap:2px;border-left:3px solid #29977f;background:#f1f8f4;border-radius:6px;padding:6px 7px;min-height:39px}
+.overview-subject-chip b{font-size:10px;color:#315b5b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.overview-subject-chip small{font-size:9px;color:#829a96;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.overview-empty{display:block;text-align:center;color:#b2c2bc;font-size:11px}
+.overview-note{font-size:10px;line-height:1.5;color:#879e98;margin:10px 0 0}
+.overview-side-stack{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.overview-side-stack .overview-health-card{grid-column:1/-1}
+.overview-health-card,.overview-attendance-card,.overview-allocation-card{padding:15px}
+.overview-health-card .card-heading,.overview-attendance-card .card-heading,.overview-allocation-card .card-heading{align-items:center;margin-bottom:9px}
+.overview-health-card .card-heading>svg,.overview-attendance-card .card-heading>svg,.overview-allocation-card .card-heading>svg{color:#299782}
+.overview-health-value{font:800 28px 'Manrope',sans-serif;color:#168a79;letter-spacing:-.04em}
+.overview-health-value small{font:600 13px 'DM Sans',sans-serif;margin-left:2px}
+.overview-progress{height:7px;border-radius:8px;background:#edf5f0;overflow:hidden;margin:8px 0}
+.overview-progress span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#69c6a7,#168d7c)}
+.overview-health-meta{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:#829a95;margin:7px 0 10px}
+.overview-attendance-count{font:800 22px 'Manrope',sans-serif;color:#1d6d61}
+.overview-attendance-count small{font:500 10px 'DM Sans',sans-serif;color:#819a94;margin-left:4px}
+.overview-allocation-values{display:flex;align-items:baseline;gap:5px}
+.overview-allocation-values strong{font:800 22px 'Manrope',sans-serif;color:#1b7e70}
+.overview-allocation-values span{font-size:9px;color:#829a95}
+.overview-empty-state{padding:25px;text-align:center;color:#849b96;background:#f5faf7;border-radius:10px;font-size:11px}
+@media(max-width:1100px){.overview-bento{grid-template-columns:1fr}.overview-side-stack{grid-template-columns:repeat(3,minmax(0,1fr))}.overview-side-stack .overview-health-card{grid-column:auto}}
+@media(max-width:760px){.overview-side-stack{grid-template-columns:1fr}.overview-side-stack .overview-health-card{grid-column:auto}.overview-bento{gap:11px}.overview-schedule-table{min-width:460px}}
