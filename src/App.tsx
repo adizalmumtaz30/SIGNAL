@@ -1230,6 +1230,18 @@ function OperatorOverviewScreen({
   const classCount = state.classes.filter((c) => c.isActive).length;
   const teacherCount = state.teachers.filter((t) => t.isActive).length;
   const subjectCount = state.subjects.filter((s) => s.isActive).length;
+  const previewClass = state.classes.find((item) => item.isActive);
+  const previewDays = state.settings.activeDays.slice(0, 5);
+  const previewPeriods = state.slots
+    .filter((slot) => slot.day === previewDays[0] && slot.kind === 'TEACHING' && slot.active && slot.jpNo != null)
+    .sort((a, b) => (a.jpNo ?? 0) - (b.jpNo ?? 0))
+    .slice(0, 4);
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const attendanceToday = (state.attendance ?? []).filter((record) => record.date === todayKey);
+  const presentToday = attendanceToday.filter((record) => record.status === 'HADIR').length;
+  const requiredJP = state.requirements.reduce((sum, item) => sum + item.requiredJP, 0);
+  const allocatedJP = (state.draft ?? state.activeSchedule ?? []).length;
 
   return (
     <>
@@ -1446,6 +1458,58 @@ function OperatorOverviewScreen({
           </div>
         </div>
       )}
+      <section className="overview-bento" aria-label="Ringkasan operasional">
+        <article className="surface-card overview-schedule-card">
+          <div className="card-heading">
+            <div><div className="card-eyebrow">WEEKLY OVERVIEW</div><h3>Jadwal Mingguan</h3></div>
+            <button className="text-link" onClick={() => onNavigate('schedule')}>Buka matriks <ArrowRight size={13} /></button>
+          </div>
+          {previewClass && previewPeriods.length > 0 ? (
+            <>
+              <div className="overview-class-label"><GraduationCap size={15} /> Kelas {previewClass.name} <span>{state.settings.schoolName}</span></div>
+              <div className="overview-schedule-scroll">
+                <table className="overview-schedule-table">
+                  <thead><tr><th>JP</th>{previewDays.map((day) => <th key={day}>{day.slice(0, 3)}</th>)}</tr></thead>
+                  <tbody>{previewPeriods.map((slot) => (
+                    <tr key={slot.jpNo}>
+                      <th><strong>{slot.jpNo}</strong><small>{slot.start}</small></th>
+                      {previewDays.map((day) => {
+                        const entry = getEntry(state, previewClass.id, day, slot.jpNo ?? 0);
+                        const subject = entry ? getSubject(state, entry.subjectId) : undefined;
+                        const teacher = entry ? getTeacher(state, entry.teacherId) : undefined;
+                        return <td key={day}>{entry ? <span className="overview-subject-chip" style={{ borderLeftColor: subject?.color || '#249782' }}><b>{subject?.code || subject?.name}</b><small>{teacher?.name || 'Guru'}</small></span> : <span className="overview-empty">—</span>}</td>;
+                      })}
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <p className="overview-note">Pratinjau empat JP pertama. Aktivitas non-KBM dan detail lengkap tersedia di matriks jadwal.</p>
+            </>
+          ) : <div className="overview-empty-state">Belum ada slot KBM aktif untuk ditampilkan.</div>}
+        </article>
+        <div className="overview-side-stack">
+          <article className="surface-card overview-health-card">
+            <div className="card-heading"><div><div className="card-eyebrow">SCHEDULE HEALTH</div><h3>Kesiapan Jadwal</h3></div><ShieldCheck size={18} /></div>
+            <div className="overview-health-value">{readiness}<small>%</small></div>
+            <div className="overview-progress"><span style={{ width: `${readiness}%` }} /></div>
+            <div className="overview-health-meta"><span>{report.hardErrorCount} konflik wajib</span><span>{report.warningCount} peringatan</span></div>
+            <button className="text-link" onClick={onOpenValidationModal}>Periksa jadwal <ArrowRight size={13} /></button>
+          </article>
+          <article className="surface-card overview-attendance-card">
+            <div className="card-heading"><div><div className="card-eyebrow">TODAY · {formatDate().toUpperCase()}</div><h3>Presensi Guru</h3></div><UserCheck size={18} /></div>
+            {attendanceToday.length > 0 ? (
+              <><div className="overview-attendance-count">{presentToday}<small> / {attendanceToday.length} hadir tercatat</small></div><div className="overview-health-meta"><span>{attendanceToday.filter((r) => r.status === 'IZIN' || r.status === 'SAKIT').length} izin/sakit</span><span>{attendanceToday.filter((r) => r.status === 'ALPA').length} alpa</span></div></>
+            ) : <p className="overview-note">Belum ada catatan presensi untuk hari ini.</p>}
+            <button className="text-link" onClick={() => onNavigate('attendance')}>Buka presensi <ArrowRight size={13} /></button>
+          </article>
+          <article className="surface-card overview-allocation-card">
+            <div className="card-heading"><div><div className="card-eyebrow">CURRICULUM COVERAGE</div><h3>Kebutuhan & Alokasi</h3></div><BookOpen size={18} /></div>
+            <div className="overview-allocation-values"><strong>{allocatedJP}</strong><span>/ {requiredJP} JP teralokasi</span></div>
+            <div className="overview-progress"><span style={{ width: `${requiredJP > 0 ? Math.min(100, Math.round((allocatedJP / requiredJP) * 100)) : 0}%` }} /></div>
+            <button className="text-link" onClick={() => onNavigate('requirements')}>Kelola alokasi <ArrowRight size={13} /></button>
+          </article>
+        </div>
+      </section>
     </>
   );
 }
