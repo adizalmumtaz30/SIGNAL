@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoState } from '../src/domain/seed';
-import { buildTimeSlots, teachingPeriodsForDay } from '../src/domain/time';
+import { buildTimeSlots, findActiveTeachingSlot, teachingPeriodsForDay } from '../src/domain/time';
 
 describe('struktur waktu KBM', () => {
   it('memisahkan istirahat dari JP KBM dan mempertahankan waktu yang berurutan', () => {
@@ -12,6 +12,20 @@ describe('struktur waktu KBM', () => {
     for (let index = 1; index < monday.length; index++) {
       expect(monday[index]!.start).toBe(monday[index - 1]!.end);
     }
+  });
+
+  it('mencari target berdasarkan JP KBM, bukan urutan aktivitas', () => {
+    const state = createDemoState();
+    state.settings.periodDefinitions = [
+      { order: 1, start: '07:00', end: '07:40', activityType: 'UPACARA' },
+      { order: 2, start: '07:40', end: '08:20', activityType: 'KBM' },
+      { order: 3, start: '08:20', end: '09:00', activityType: 'ISTIRAHAT' },
+      { order: 4, start: '09:00', end: '09:40', activityType: 'KBM' },
+    ];
+    const slots = buildTimeSlots(state.settings);
+    expect(findActiveTeachingSlot(slots, 'Senin', 1)?.order).toBe(2);
+    expect(findActiveTeachingSlot(slots, 'Senin', 2)?.order).toBe(4);
+    expect(findActiveTeachingSlot(slots, 'Senin', 3)).toBeUndefined();
   });
 
   it('tidak menghasilkan jam yang tumpang tindih ketika banyak jeda dipilih', () => {
