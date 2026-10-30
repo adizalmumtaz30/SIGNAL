@@ -12,14 +12,15 @@
 | 6 | Atelier Luxury | Secara eksplisit ditolak untuk redesign ini | Jangan gunakan palette/identity Atelier |
 | 7 | Mockup gambar dashboard madrasah terbaru | **Visual source of truth** | Diikuti untuk warna, ilustrasi, layout, dan mood |
 | 8 | Prototype HTML 5-in-1 | Artefak interaksi eksploratif | Bukan visual source of truth |
+| 9 | Storyboard sekolah (tanpa Bento) | **Arah visual terbaru** | 11 frame adalah presentasi storyboard; layout produk tetap shell workspace standar dan ilustrasi harus berupa bangunan sekolah, bukan masjid |
 
 ## Keputusan pengguna yang mengikat
 
 - Ubah visual secara besar, tetapi jangan buang fitur dan logika aplikasi.
 - Desain harus terasa premium, murah dibangun/dirawat, simple, usable, dan berbeda jauh dari mockup terdahulu.
-- Arah visual terakhir memadukan neomorphism, flat design, minimalism, Material Design, dan Bento UI 2026.
+- Arah visual terbaru: soft surface depth terbatas, flat design, minimalism, dan hierarki interaksi Material; **Bento Grid dihapus dari layout produk**. Frame storyboard hanya media presentasi.
 - Ikon premium dan font premium diminta; gunakan Lucide yang sudah ada dan DM Sans/Manrope tanpa dependency baru.
-- Ilustrasi sekolah/madrasah Islam pada beberapa area inti, termasuk sidebar dan hero.
+- Ilustrasi bangunan sekolah konvensional pada area inti seperti sidebar dan hero; tidak boleh ada masjid, kubah, atau minaret.
 - Sidebar jangan polos; tambahkan ilustrasi/ornamen yang tidak mengganggu nav.
 - Footer sederhana, compact, dan fungsional.
 - Larangan keras AI slop dan skeuomorphism. Neumorphism terbaru hanya aksen permukaan halus, bukan skeuomorphism.
