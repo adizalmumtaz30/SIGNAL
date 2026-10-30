@@ -71,6 +71,7 @@ import type {
 import { DAYS } from './domain/types';
 import {
   buildTimeSlots,
+  findActiveTeachingSlot,
   clockToMinutes,
   createDefaultPeriodDefinitions,
   isSlotBlocked,
@@ -335,12 +336,10 @@ export default function App() {
     if (!workspace) return;
     if (source.day === target.day && source.jpNo === target.jpNo) return;
 
-    // 1. Check if target slot is a blocked activity (Upacara, Istirahat, Religi, Kegiatan Lain)
-    const targetSlotDef = workspace.slots.find(
-      (s) => s.day === target.day && (s.order === target.jpNo || (s.kind === 'TEACHING' && s.jpNo === target.jpNo)),
-    );
-    if (isSlotBlocked(targetSlotDef)) {
-      notify(`Tidak dapat dipindahkan: Jam tersebut diblokir oleh kegiatan ${targetSlotDef?.label || 'non-KBM'}.`, 'error');
+    // JP number and activity order are different dimensions. Only an active KBM slot is a valid target.
+    const targetSlotDef = findActiveTeachingSlot(workspace.slots, target.day, target.jpNo);
+    if (!targetSlotDef) {
+      notify(`Tidak dapat dipindahkan: ${target.day} JP ${target.jpNo} bukan slot KBM aktif.`, 'error');
       return;
     }
 
@@ -407,6 +406,10 @@ export default function App() {
 
   const openSlotEditor = (classId: string, day: Day, jpNo: number) => {
     if (!workspace) return;
+    if (!findActiveTeachingSlot(workspace.slots, day, jpNo)) {
+      notify(`Editor tidak tersedia: ${day} JP ${jpNo} bukan slot KBM aktif.`, 'warning');
+      return;
+    }
     const entry = getEntry(workspace, classId, day, jpNo);
     setEditingSlot({ classId, day, jpNo });
     setEditingSubject(entry?.subjectId ?? '');
@@ -418,6 +421,11 @@ export default function App() {
     event.preventDefault();
     if (!workspace || !editingSlot) return;
     const { classId, day, jpNo } = editingSlot;
+    if (!findActiveTeachingSlot(workspace.slots, day, jpNo)) {
+      setEditingSlot(null);
+      notify(`Perubahan ditolak: ${day} JP ${jpNo} bukan slot KBM aktif.`, 'error');
+      return;
+    }
 
     let targetTeacherId = editingTeacher;
     let nextTeachers = [...workspace.teachers];
@@ -738,7 +746,7 @@ export default function App() {
       <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
         <div className="brand-lockup">
           <div className="brand-mark"><span>S</span><i /></div>
-          <div className="brand-text"><strong>SIGNAL</strong><span>ACADEMIC STUDIO</span></div>
+          <div className="brand-text"><strong>SIGNAL</strong><span>SMART ISLAMIC SCHOOL SCHEDULER</span></div>
           <button className="icon-button sidebar-close" aria-label="Tutup menu" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         </div>
         <div className="workspace-chip">
@@ -793,7 +801,7 @@ export default function App() {
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { setMasterSearch(globalSearch); navigate('master'); } }}
-                placeholder="Cari kelas, guru, atau mapel…"
+                placeholder="Cari di Data Master: kelas, guru, atau mapel…"
               />
               <kbd><Command size={10} /> K</kbd>
             </div>
@@ -990,7 +998,7 @@ export default function App() {
           <footer className="app-footer">
             <span>© 2026 SIGNAL Academic Studio · Sistem Informasi Generasi Aturan & Logika</span>
             <span><span className="tiny-status-dot" /> Data tersimpan lokal di browser ini</span>
-            <span>Built for clarity, designed for calm.</span>
+            <span>“Bukan sekadar jadwal, tapi tentang masa depan generasi.”</span>
           </footer>
         </div>
       </main>
