@@ -164,47 +164,47 @@ export function QuickValidationModal({
             </strong>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="button button-secondary" onClick={onRevalidate} style={{ height: '32px', fontSize: '11px' }}>
+            <button className="button button-sm button-secondary" onClick={onRevalidate}>
               <RefreshCw size={13} /> Uji Ulang
             </button>
           </div>
         </div>
 
-        {/* Category Filter Pills */}
+        {/* Category Filter Tabs */}
         <div style={{ display: 'flex', gap: '6px', padding: '14px 20px 0', overflowX: 'auto' }}>
           <button
-            className={`status-pill ${activeCategory === 'all' ? 'status-success' : 'status-neutral'}`}
-            style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '11px' }}
+            type="button"
+            className={`filter-tab-btn ${activeCategory === 'all' ? 'active' : ''}`}
             onClick={() => setActiveCategory('all')}
           >
             Semua ({allIssues.length})
           </button>
           <button
-            className={`status-pill ${activeCategory === 'teacher_clash' ? 'status-warning' : 'status-neutral'}`}
-            style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '11px' }}
+            type="button"
+            className={`filter-tab-btn ${activeCategory === 'teacher_clash' ? 'active' : ''}`}
             onClick={() => setActiveCategory('teacher_clash')}
           >
-            <Users size={12} style={{ marginRight: '4px' }} />
+            <Users size={12} />
             Bentrok Guru ({categorized.teacher_clash.length})
           </button>
           <button
-            className={`status-pill ${activeCategory === 'class_clash' ? 'status-warning' : 'status-neutral'}`}
-            style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '11px' }}
+            type="button"
+            className={`filter-tab-btn ${activeCategory === 'class_clash' ? 'active' : ''}`}
             onClick={() => setActiveCategory('class_clash')}
           >
-            <GraduationCap size={12} style={{ marginRight: '4px' }} />
+            <GraduationCap size={12} />
             Bentrok Kelas ({categorized.class_clash.length})
           </button>
           <button
-            className={`status-pill ${activeCategory === 'time_activity' ? 'status-warning' : 'status-neutral'}`}
-            style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '11px' }}
+            type="button"
+            className={`filter-tab-btn ${activeCategory === 'time_activity' ? 'active' : ''}`}
             onClick={() => setActiveCategory('time_activity')}
           >
             Waktu & Kegiatan ({categorized.time_activity.length})
           </button>
           <button
-            className={`status-pill ${activeCategory === 'coverage' ? 'status-warning' : 'status-neutral'}`}
-            style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '11px' }}
+            type="button"
+            className={`filter-tab-btn ${activeCategory === 'coverage' ? 'active' : ''}`}
             onClick={() => setActiveCategory('coverage')}
           >
             Alokasi & Kualifikasi ({categorized.coverage.length})

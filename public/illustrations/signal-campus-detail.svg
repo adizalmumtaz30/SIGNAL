@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="285 25 390 220" role="img" aria-labelledby="title desc">
+<title id="title">Detail fasad kampus sekolah SIGNAL</title>
+<desc id="desc">Potongan fasad sekolah kontemporer, area masuk dan taman. Tidak ada bentuk masjid.</desc>
+<g>
+  <defs>
+   <linearGradient id="arch-sky" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#f4f0e5"/><stop offset=".58" stop-color="#dce8dc"/><stop offset="1" stop-color="#c4d9cb"/>
+   </linearGradient>
+   <linearGradient id="arch-glass" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#a6c7bb"/><stop offset=".45" stop-color="#668f83"/><stop offset="1" stop-color="#315f54"/>
+   </linearGradient>
+   <linearGradient id="arch-stone" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#fffdf5"/><stop offset="1" stop-color="#d9dfd2"/>
+   </linearGradient>
+   <linearGradient id="arch-ground" x1="0" y1="0" x2=".6" y2="1">
+    <stop offset="0" stop-color="#a9bea5"/><stop offset="1" stop-color="#647f69"/>
+   </linearGradient>
+   <pattern id="arch-screen" width="7" height="7" patternUnits="userSpaceOnUse">
+    <path d="M1 0V7" stroke="#b58f58" stroke-width="1" opacity=".62"/>
+   </pattern>
+   <pattern id="arch-paving" width="54" height="26" patternUnits="userSpaceOnUse">
+    <path d="M0 0H54M27 0V26" fill="none" stroke="#e8e3d5" stroke-width=".75" opacity=".7"/>
+   </pattern>
+  </defs>
+  <!-- atmospheric backdrop -->
+  <rect width="700" height="260" fill="url(#arch-sky)"/>
+  <circle cx="583" cy="45" r="27" fill="#f6ecd1" opacity=".72"/>
+  <path d="M0 142C90 115 147 132 220 120S360 124 430 113 605 112 700 124V260H0Z" fill="#c6d8c9"/>
+  <path d="M0 183C115 157 193 174 280 158S488 164 700 145V260H0Z" fill="#b2c8b4"/>
+  <!-- distant low-rise campus wing -->
+  <path d="M185 113 305 76 416 104V190H185Z" fill="#d3ded1"/>
+  <path d="M185 113 305 76 416 104 301 132Z" fill="#6c8d79"/>
+  <path d="M200 117 304 87 304 181 200 199Z" fill="#f5f1e5"/>
+  <path d="M314 91 402 113V183L314 178Z" fill="#e5e9dc"/>
+  <path d="M211 125 293 101V115L211 139Z" fill="#c2d2c3"/>
+  <g fill="url(#arch-glass)" stroke="#f4f0e4" stroke-width="3">
+   <path d="M214 146 235 140V170L214 176Z"/><path d="M250 135 271 129V159L250 165Z"/><path d="M326 120 348 126V154L326 148Z"/><path d="M366 130 389 136V164L366 158Z"/>
+  </g>
+  <path d="M185 183 301 166 416 183" fill="none" stroke="#9eae9d" stroke-width="2"/>
+  <!-- main contemporary academic building: three distinct horizontal wings -->
+  <path d="M298 94 487 43 673 88V206L487 222 298 190Z" fill="url(#arch-stone)"/>
+  <!-- upper roof plane and deep fascia -->
+  <path d="M285 91 487 31 686 82 487 119Z" fill="#587d6b"/>
+  <path d="M298 90 487 48 667 91 487 124Z" fill="#e8eadb"/>
+  <path d="M307 96 487 58 654 97 487 126Z" fill="#f8f5e9"/>
+  <path d="M302 143 487 101 667 143V157L487 117 302 159Z" fill="#d1d9c9"/>
+  <path d="M302 188 487 151 667 187V201L487 166 302 204Z" fill="#b9cbbd"/>
+  <!-- glass curtain wall upper level -->
+  <path d="M322 105 483 69 483 113 322 149Z" fill="url(#arch-glass)"/>
+  <path d="M493 70 646 105V147L493 113Z" fill="url(#arch-glass)"/>
+  <g stroke="#dce6d9" stroke-width="3" fill="none">
+   <path d="M352 99V142M386 91V134M420 83V127M454 75V119M524 77V120M557 85V128M590 92V136M623 100V143"/>
+   <path d="M322 126 483 90M493 91 646 126"/>
+  </g>
+  <!-- second floor, individual classroom windows -->
+  <path d="M322 157 483 122V159L322 194Z" fill="#e8eee4"/>
+  <path d="M493 126 646 160V195L493 161Z" fill="#e4eade"/>
+  <g fill="url(#arch-glass)" stroke="#f5f2e7" stroke-width="3">
+   <path d="M336 162 361 157V183L336 188Z"/><path d="M375 153 400 148V174L375 179Z"/><path d="M414 144 439 139V165L414 170Z"/><path d="M453 135 472 131V157L453 161Z"/>
+   <path d="M509 138 536 144V170L509 164Z"/><path d="M548 147 575 153V179L548 173Z"/><path d="M587 156 614 162V188L587 182Z"/>
+  </g>
+  <!-- vertical architectural fins -->
+  <g fill="#b38c57" opacity=".85">
+   <path d="M307 103 313 102V198L307 199Z"/><path d="M318 100 322 99V196L318 197Z"/>
+   <path d="M477 57 482 58V216L477 217Z"/><path d="M484 59 489 60V217L484 218Z"/>
+   <path d="M653 91 659 93V203L653 204Z"/>
+  </g>
+  <!-- ground floor / recessed lobby -->
+  <path d="M322 201 483 169 483 224 322 235Z" fill="#e9e9dc"/>
+  <path d="M493 169 646 203V219L493 235Z" fill="#d8e1d5"/>
+  <path d="M350 197 474 173V224L350 232Z" fill="#315e52"/>
+  <path d="M365 194 388 189V228L365 232Z" fill="#94b8aa"/>
+  <path d="M402 186 425 181V224L402 228Z" fill="#a9c6b8"/>
+  <path d="M439 178 462 173V218L439 222Z" fill="#91b5a6"/>
+  <path d="M350 197 474 173" stroke="#d9c59a" stroke-width="3"/>
+  <path d="M342 236 483 211 500 215 360 243Z" fill="#b58d58"/>
+  <!-- covered entry and sign -->
+  <path d="M391 166 482 145 506 153 414 177Z" fill="#275b4d"/>
+  <path d="M414 177 506 153V160L414 184Z" fill="#d2b57d"/>
+  <path d="M429 147 478 136 478 143 429 154Z" fill="#f4f0e4"/>
+  <path d="M439 150 469 143" stroke="#537668" stroke-width="1.4"/>
+  <!-- accessible ramp, steps and forecourt -->
+  <path d="M358 239 493 214 554 260H287Z" fill="#d7d7c7"/>
+  <path d="M367 241 492 219 524 242 396 260Z" fill="#ebe7d9"/>
+  <path d="M390 245 493 227M405 253 509 235" stroke="#c0c2b2" stroke-width="1.4"/>
+  <path d="M0 220Q118 191 224 209T432 215 700 190V260H0Z" fill="url(#arch-ground)"/>
+  <path d="M0 231Q133 205 254 223T496 220 700 204V260H0Z" fill="url(#arch-paving)" opacity=".72"/>
+  <path d="M266 260 374 225 495 219 602 260Z" fill="#c8cbb9" opacity=".78"/>
+  <path d="M308 260 389 235 486 230 548 260Z" fill="#e7e3d5"/>
+  <!-- planted beds and mature trees -->
+  <path d="M35 213Q88 198 137 214L154 239Q92 229 28 246Z" fill="#496f5a"/>
+  <path d="M592 205Q642 188 689 204L700 234Q648 225 584 241Z" fill="#4b725b"/>
+  <g>
+   <path d="M107 221 111 159 118 157 119 222" fill="#725d45"/>
+   <path d="M115 174C83 164 80 133 101 121 94 102 119 86 137 101 154 85 178 104 170 125 193 138 178 168 153 170 145 187 124 187 115 174Z" fill="#668d6d"/>
+   <path d="M102 143Q121 121 147 117M116 162Q145 136 169 135" fill="none" stroke="#93ae87" stroke-width="2" opacity=".7"/>
+   <path d="M630 215 633 164 640 162 641 214" fill="#725d45"/>
+   <path d="M635 173C610 162 612 139 629 128 623 111 645 97 659 111 677 101 696 119 687 138 705 151 688 177 669 176 660 188 641 186 635 173Z" fill="#648b6a"/>
+   <path d="M625 151Q647 132 673 128M640 170Q659 146 687 144" fill="none" stroke="#95b28b" stroke-width="2" opacity=".7"/>
+  </g>
+  <!-- restrained ornamental planting -->
+  <g fill="#789a76">
+   <path d="M42 244q-4-20 8-30 4 18-8 30m4 2q4-23 20-27-2 18-20 27m-8 2q-12-15-7-27 12 12 7 27"/>
+   <path d="M574 239q-4-19 8-29 4 17-8 29m5 2q5-22 20-26-3 17-20 26m-9 2q-12-14-7-26 12 11 7 26"/>
+  </g>
+  <!-- flag on a discreet flagpole, no religious silhouette -->
+  <path d="M606 82V31" stroke="#6e796a" stroke-width="1.6"/>
+  <path d="M607 33 631 39 607 45Z" fill="#b65e4d"/>
+  <!-- tiny people for scale -->
+  <g>
+   <circle cx="258" cy="208" r="3.7" fill="#3e5147"/><path d="M254 212h8l3 17h-13Z" fill="#e4e0d1"/><path d="M256 228 253 237m7-9 4 9" stroke="#3e5147" stroke-width="1.7"/>
+   <circle cx="532" cy="204" r="3.6" fill="#3e5147"/><path d="M528 208h8l3 16h-13Z" fill="#c08f56"/><path d="M530 223 527 233m7-10 4 10" stroke="#3e5147" stroke-width="1.7"/>
+   <circle cx="551" cy="202" r="3.4" fill="#3e5147"/><path d="M547 206h8l3 15h-13Z" fill="#f1eee2"/><path d="M549 221 546 231m7-10 4 10" stroke="#3e5147" stroke-width="1.6"/>
+  </g>
+  <!-- a restrained sunlit edge that gives the illustration depth -->
+  <path d="M292 92 487 34 676 82" fill="none" stroke="#fffdf4" stroke-width="2" opacity=".8"/>
+ </g>
+</svg>

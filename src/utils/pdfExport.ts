@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { AppState, Day, SchoolClass } from '../domain/types';
-import { isSlotBlocked, jpToAstronomical } from '../domain/time';
+import { getTimelineRows, isSlotBlocked, jpToAstronomical } from '../domain/time';
 import { getDefaultMadrasahLogo } from './madrasahLogo';
 import { groupClassesForMasterMatrix } from './matrixGrouping';
 
@@ -499,7 +499,6 @@ function renderClassWeeklyPages(
   const allEntries = state.draft ?? state.activeSchedule ?? [];
   const classEntries = allEntries.filter((e) => e.classId === cls.id);
   const activeDays = state.settings.activeDays;
-  const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
   const periodMinutes = state.settings.periodMinutes ?? 40;
   const astro = jpToAstronomical(classEntries.length, periodMinutes);
   const colorize = options?.colorizeSubjects !== false;
@@ -578,11 +577,25 @@ function renderClassWeeklyPages(
   const tableHeaders = ['Jam / JP', ...activeDays];
   const tableData: string[][] = [];
   const cellSubjectMap: Record<number, Record<number, string>> = {};
+  const isRowNonKbm: Record<number, boolean> = {};
 
-  for (let jpIdx = 0; jpIdx < periods.length; jpIdx++) {
-    const jp = periods[jpIdx];
-    const slot = state.slots.find((s) => s.day === activeDays[0] && s.kind === 'TEACHING' && s.jpNo === jp);
-    const timeLabel = slot ? `JP ${jp}\n${slot.start} - ${slot.end}` : `JP ${jp}`;
+  const timelineRows = getTimelineRows(state.slots, state.settings.teachingPeriodsPerDay);
+
+  timelineRows.forEach((tRow, rIdx) => {
+    if (!tRow.isKbm) {
+      isRowNonKbm[rIdx] = true;
+      const timeLabel = `${tRow.defaultLabel}\n${tRow.start} - ${tRow.end}`;
+      const row = [timeLabel];
+      activeDays.forEach((day) => {
+        const slot = state.slots.find((s) => s.day === day && s.order === tRow.order);
+        row.push(slot?.activityName || slot?.label || tRow.defaultLabel);
+      });
+      tableData.push(row);
+      return;
+    }
+
+    const jp = tRow.jpNo!;
+    const timeLabel = `JP ${jp}\n${tRow.start} - ${tRow.end}`;
     const row = [timeLabel];
 
     activeDays.forEach((day, dIdx) => {
@@ -594,14 +607,14 @@ function renderClassWeeklyPages(
         const subName = compact ? compactSubjectName(sub?.name ?? '', sub?.code) : (sub?.name ?? 'Mapel');
         const tchInfo = tch ? (compact ? `(${compactTeacherName(tch.name, tch.code)})` : (tch.code ? `[${tch.code}] ${tch.name}` : tch.name)) : '—';
         row.push(`${subName}\n${tchInfo}`);
-        if (!cellSubjectMap[jpIdx]) cellSubjectMap[jpIdx] = {};
-        cellSubjectMap[jpIdx][colIdx] = entry.subjectId;
+        if (!cellSubjectMap[rIdx]) cellSubjectMap[rIdx] = {};
+        cellSubjectMap[rIdx][colIdx] = entry.subjectId;
       } else {
         row.push('—');
       }
     });
     tableData.push(row);
-  }
+  });
 
   // Calculate day column width based on available paper width (A4 vs F4)
   const timeColWidth = orientation === 'landscape' ? 24 : 18;
@@ -644,15 +657,22 @@ function renderClassWeeklyPages(
     },
     columnStyles: colStyles,
     didParseCell: (data) => {
-      if (data.section === 'body' && data.column.index >= 1) {
-        const subId = cellSubjectMap[data.row.index]?.[data.column.index];
-        if (subId && colorize) {
-          const subject = state.subjects.find((s) => s.id === subId);
-          if (subject?.color) {
-            const { bg, text } = getPrintableCellColor(subject.color);
-            data.cell.styles.fillColor = bg;
-            data.cell.styles.textColor = text;
-            data.cell.styles.fontStyle = 'bold';
+      if (data.section === 'body') {
+        if (isRowNonKbm[data.row.index]) {
+          data.cell.styles.fillColor = [240, 246, 243];
+          data.cell.styles.textColor = [16, 63, 62];
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fontSize = isSinglePage ? 6.2 : 6.8;
+        } else if (data.column.index >= 1) {
+          const subId = cellSubjectMap[data.row.index]?.[data.column.index];
+          if (subId && colorize) {
+            const subject = state.subjects.find((s) => s.id === subId);
+            if (subject?.color) {
+              const { bg, text } = getPrintableCellColor(subject.color);
+              data.cell.styles.fillColor = bg;
+              data.cell.styles.textColor = text;
+              data.cell.styles.fontStyle = 'bold';
+            }
           }
         }
       }
@@ -1092,7 +1112,6 @@ export function exportAllClassesSinglePageA4PDF(
   const entries = state.draft ?? state.activeSchedule ?? [];
   const classes = state.classes.filter((c) => c.isActive);
   const activeDays = state.settings.activeDays;
-  const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
   const periodMinutes = state.settings.periodMinutes ?? 40;
   const colorize = options?.colorizeSubjects !== false;
   const compact = options?.compactNames !== false;
@@ -1232,9 +1251,10 @@ export function exportAllClassesSinglePageA4PDF(
 
       // 3. JP Rows
       const headerH = titleH + subHeaderH;
-      const rowH = (blockH - headerH) / periods.length;
+      const timelineRows = getTimelineRows(state.slots, state.settings.teachingPeriodsPerDay);
+      const rowH = (blockH - headerH) / timelineRows.length;
 
-      periods.forEach((jpNo, pIdx) => {
+      timelineRows.forEach((tRow, pIdx) => {
         const rowY = blockY + headerH + pIdx * rowH;
 
         // JP No cell
@@ -1243,29 +1263,29 @@ export function exportAllClassesSinglePageA4PDF(
         doc.setLineWidth(0.15);
         doc.rect(blockX, rowY, jpW, rowH, 'FD');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5.0);
+        doc.setFontSize(4.8);
         doc.setTextColor(11, 52, 53);
-        doc.text(String(jpNo).padStart(2, '0'), blockX + jpW / 2, rowY + rowH * 0.65, { align: 'center' });
+        const jpLabel = tRow.isKbm ? String(tRow.jpNo).padStart(2, '0') : '—';
+        doc.text(jpLabel, blockX + jpW / 2, rowY + rowH * 0.65, { align: 'center' });
 
         // Waktu cell
-        const refSlot = state.slots.find((s) => s.kind === 'TEACHING' && s.jpNo === jpNo);
-        const timeStr = refSlot ? `${refSlot.start}-${refSlot.end}` : '';
+        const timeStr = `${tRow.start}-${tRow.end}`;
         doc.setFillColor(250, 252, 251);
         doc.rect(blockX + jpW, rowY, timeW, rowH, 'FD');
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(4.2);
+        doc.setFontSize(3.8);
         doc.setTextColor(85, 100, 95);
         doc.text(timeStr, blockX + jpW + timeW / 2, rowY + rowH * 0.65, { align: 'center' });
 
         // Days cells
         activeDays.forEach((day, dIdx) => {
           const cellX = blockX + jpW + timeW + dIdx * dayW;
-          const slotDef = state.slots.find((s) => s.day === day && s.kind === 'TEACHING' && s.jpNo === jpNo);
-          const blocked = isSlotBlocked(slotDef);
+          const slotDef = state.slots.find((s) => s.day === day && s.order === tRow.order);
+          const blocked = !tRow.isKbm || isSlotBlocked(slotDef);
 
           if (blocked) {
             // Non-KBM activity
-            const actType = (slotDef?.activityType || 'ISTIRAHAT').toUpperCase();
+            const actType = (slotDef?.activityType || tRow.activityType || 'ISTIRAHAT').toUpperCase();
             let actBg: [number, number, number] = [254, 248, 230]; // warm yellow for istirahat
             let actBorder: [number, number, number] = [230, 205, 140];
             let actText: [number, number, number] = [130, 95, 30];
@@ -1289,12 +1309,13 @@ export function exportAllClassesSinglePageA4PDF(
             doc.rect(cellX, rowY, dayW, rowH, 'FD');
 
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(4.2);
+            doc.setFontSize(4.0);
             doc.setTextColor(...actText);
             if (doc.getTextWidth(actShort) > dayW - 0.5) actShort = actShort.slice(0, 4);
             doc.text(actShort, cellX + dayW / 2, rowY + rowH * 0.65, { align: 'center' });
           } else {
             // KBM slot
+            const jpNo = tRow.jpNo!;
             const entry = entries.find((e) => e.classId === cls.id && e.day === day && e.jpNo === jpNo);
             if (!entry) {
               doc.setFillColor(255, 255, 255);
@@ -1661,7 +1682,6 @@ export function exportScheduleTeacherPDF(
   const doc = createJsPDFDocument('portrait', paperSize);
   const entries = (state.draft ?? state.activeSchedule ?? []).filter((e) => e.teacherId === teacher.id);
   const activeDays = state.settings.activeDays;
-  const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
   const astro = jpToAstronomical(entries.length, state.settings.periodMinutes ?? 40);
 
   let currentY = renderOfficialKopSurat(doc, state, 10);
@@ -1694,10 +1714,25 @@ export function exportScheduleTeacherPDF(
 
   const tableHeaders = ['Jam / JP', ...activeDays];
   const tableData: string[][] = [];
+  const isRowNonKbm: Record<number, boolean> = {};
 
-  for (const jp of periods) {
-    const slot = state.slots.find((s) => s.day === activeDays[0] && s.kind === 'TEACHING' && s.jpNo === jp);
-    const timeLabel = slot ? `JP ${jp}\n${slot.start} - ${slot.end}` : `JP ${jp}`;
+  const timelineRows = getTimelineRows(state.slots, state.settings.teachingPeriodsPerDay);
+
+  timelineRows.forEach((tRow, rIdx) => {
+    if (!tRow.isKbm) {
+      isRowNonKbm[rIdx] = true;
+      const timeLabel = `${tRow.defaultLabel}\n${tRow.start} - ${tRow.end}`;
+      const row = [timeLabel];
+      activeDays.forEach((day) => {
+        const slot = state.slots.find((s) => s.day === day && s.order === tRow.order);
+        row.push(slot?.activityName || slot?.label || tRow.defaultLabel);
+      });
+      tableData.push(row);
+      return;
+    }
+
+    const jp = tRow.jpNo!;
+    const timeLabel = `JP ${jp}\n${tRow.start} - ${tRow.end}`;
     const row = [timeLabel];
 
     for (const day of activeDays) {
@@ -1711,7 +1746,7 @@ export function exportScheduleTeacherPDF(
       }
     }
     tableData.push(row);
-  }
+  });
 
   autoTable(doc, {
     startY: currentY,
@@ -1730,6 +1765,16 @@ export function exportScheduleTeacherPDF(
       halign: 'center',
       valign: 'middle',
       cellPadding: 3,
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (isRowNonKbm[data.row.index]) {
+          data.cell.styles.fillColor = [240, 246, 243];
+          data.cell.styles.textColor = [16, 63, 62];
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fontSize = 7.2;
+        }
+      }
     },
     alternateRowStyles: {
       fillColor: [248, 250, 248],

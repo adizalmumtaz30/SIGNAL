@@ -16,12 +16,48 @@ export function clockToMinutes(time: string): number {
 
 export function createDefaultPeriodDefinitions(
   teachingPeriods = 8,
-  breakAfterJP = [2, 5],
+  breakAfterJP = [3, 6],
   periodMinutes = 40,
 ): PeriodDefinition[] {
   const definitions: PeriodDefinition[] = [];
   let order = 1;
   let cursor = 7 * 60; // 07:00
+
+  // 1. Agenda Pagi Jam Pertama (Non-KBM):
+  // Upacara pada hari Senin (07:00 - 07:40)
+  // Tadarus & Sholat Dhuha pada Selasa - Sabtu (07:00 - 07:40)
+  const morningStart = toClock(cursor);
+  const morningEnd = toClock(cursor + 40);
+  cursor += 40;
+
+  definitions.push({
+    order: order++,
+    start: morningStart,
+    end: morningEnd,
+    activityType: 'UPACARA',
+    activityName: 'Upacara Bendera',
+    applicableDays: ['Senin'],
+  });
+
+  definitions.push({
+    order: order++,
+    start: morningStart,
+    end: morningEnd,
+    activityType: 'RELIGI',
+    activityName: 'Tadarus & Sholat Dhuha',
+    applicableDays: ['Selasa', 'Rabu', 'Kamis', 'Sabtu'],
+  });
+
+  definitions.push({
+    order: order++,
+    start: morningStart,
+    end: morningEnd,
+    activityType: 'RELIGI',
+    activityName: 'Jumat Bersih & Religi',
+    applicableDays: ['Jumat'],
+  });
+
+  // 2. KBM Periods and Breaks
   const breakSet = new Set(breakAfterJP);
 
   for (let jp = 1; jp <= teachingPeriods; jp++) {
@@ -34,18 +70,22 @@ export function createDefaultPeriodDefinitions(
       start,
       end,
       activityType: 'KBM',
+      activityName: `Jam Belajar (JP ${jp})`,
     });
 
     if (breakSet.has(jp) && jp < teachingPeriods) {
+      const isSecondBreak = jp >= 5;
+      const bDuration = isSecondBreak ? 40 : 20;
       const bStart = toClock(cursor);
-      const bEnd = toClock(cursor + 20);
-      cursor += 20;
+      const bEnd = toClock(cursor + bDuration);
+      cursor += bDuration;
 
       definitions.push({
         order: order++,
         start: bStart,
         end: bEnd,
-        activityType: 'ISTIRAHAT',
+        activityType: isSecondBreak ? 'RELIGI' : 'ISTIRAHAT',
+        activityName: isSecondBreak ? 'Sholat Dhuhur & Istirahat' : 'Istirahat Pagi',
       });
     }
   }
@@ -64,104 +104,58 @@ export function buildTimeSlots(
   const teachingPeriods = Math.min(maxTeaching, Math.max(1, settings.teachingPeriodsPerDay));
   const periodMinutes = settings.periodMinutes ?? 40;
 
-  // If customized period definitions are provided, use them
-  if (settings.periodDefinitions && settings.periodDefinitions.length > 0) {
-    for (const day of DAYS) {
-      if (!settings.activeDays.includes(day)) continue;
-      let jpNo = 0;
-      let orderIndex = 0;
+  const defs =
+    settings.periodDefinitions && settings.periodDefinitions.length > 0
+      ? settings.periodDefinitions
+      : createDefaultPeriodDefinitions(
+          teachingPeriods,
+          settings.breakAfterJP ?? [3, 6],
+          periodMinutes,
+        );
 
-      for (const def of settings.periodDefinitions) {
-        if (def.applicableDays && def.applicableDays.length > 0 && !def.applicableDays.includes(day)) {
-          continue;
-        }
-
-        orderIndex += 1;
-        const isKbm = def.activityType === 'KBM';
-        if (isKbm) jpNo += 1;
-
-        let label = def.activityName || def.activityType;
-        if (isKbm) {
-          label = `JP ${jpNo}`;
-        } else if (def.activityType === 'UPACARA') {
-          label = def.activityName || 'Upacara Bendera';
-        } else if (def.activityType === 'ISTIRAHAT') {
-          label = def.activityName || 'Istirahat';
-        } else if (def.activityType === 'RELIGI') {
-          label = def.activityName || 'Religi / Dhuha';
-        } else if (def.activityType === 'LAINNYA') {
-          label = def.activityName || 'Kegiatan Lain';
-        }
-
-        slots.push({
-          id: `${day}-${orderIndex}`,
-          day,
-          order: orderIndex,
-          kind: isKbm ? 'TEACHING' : 'BREAK',
-          activityType: def.activityType,
-          activityName: def.activityName,
-          jpNo: isKbm ? jpNo : undefined,
-          label,
-          start: def.start,
-          end: def.end,
-          active: isKbm ? jpNo <= maxTeaching : true,
-        });
-      }
-    }
-    return slots;
-  }
-
-  // Fallback default generation
-  const breakAfter = new Set(settings.breakAfterJP);
   for (const day of DAYS) {
     if (!settings.activeDays.includes(day)) continue;
     let jpNo = 0;
-    let order = 0;
-    let cursorMinutes = 7 * 60;
+    let orderIndex = 0;
 
-    const pushTeaching = (startMinutes: number, endMinutes: number) => {
-      jpNo += 1;
-      order += 1;
-      slots.push({
-        id: `${day}-${order}`,
-        day,
-        order,
-        kind: 'TEACHING',
-        activityType: 'KBM',
-        jpNo,
-        label: `JP ${jpNo}`,
-        start: toClock(startMinutes),
-        end: toClock(endMinutes),
-        active: jpNo <= maxTeaching,
-      });
-    };
-
-    const pushBreak = (startMinutes: number, endMinutes: number) => {
-      order += 1;
-      slots.push({
-        id: `${day}-${order}`,
-        day,
-        order,
-        kind: 'BREAK',
-        activityType: 'ISTIRAHAT',
-        label: 'Istirahat',
-        start: toClock(startMinutes),
-        end: toClock(endMinutes),
-        active: true,
-      });
-    };
-
-    for (let jp = 1; jp <= teachingPeriods; jp++) {
-      const teachingEnd = cursorMinutes + periodMinutes;
-      pushTeaching(cursorMinutes, teachingEnd);
-      cursorMinutes = teachingEnd;
-      if (breakAfter.has(jp) && jp < teachingPeriods) {
-        const breakEnd = cursorMinutes + 20;
-        pushBreak(cursorMinutes, breakEnd);
-        cursorMinutes = breakEnd;
+    for (const def of defs) {
+      if (def.applicableDays && def.applicableDays.length > 0 && !def.applicableDays.includes(day)) {
+        continue;
       }
+
+      orderIndex += 1;
+      const isKbm = def.activityType === 'KBM';
+      if (isKbm) jpNo += 1;
+
+      let label = def.activityName || def.activityType;
+      if (isKbm) {
+        label = `JP ${jpNo}`;
+      } else if (def.activityType === 'UPACARA') {
+        label = def.activityName || 'Upacara Bendera';
+      } else if (def.activityType === 'ISTIRAHAT') {
+        label = def.activityName || 'Istirahat';
+      } else if (def.activityType === 'RELIGI') {
+        label = def.activityName || 'Religi / Dhuha';
+      } else if (def.activityType === 'LAINNYA') {
+        label = def.activityName || 'Kegiatan Lain';
+      }
+
+      slots.push({
+        id: `${day}-${orderIndex}`,
+        day,
+        order: orderIndex,
+        kind: isKbm ? 'TEACHING' : 'BREAK',
+        activityType: def.activityType,
+        activityName: def.activityName,
+        jpNo: isKbm ? jpNo : undefined,
+        label,
+        start: def.start,
+        end: def.end,
+        active: isKbm ? jpNo <= maxTeaching : true,
+      });
     }
   }
+
   return slots;
 }
 
@@ -200,4 +194,52 @@ export function jpToAstronomical(jp: number, periodMinutes = 40): { minutes: num
 export function isSlotBlocked(slot?: TimeSlot): boolean {
   if (!slot) return true;
   return slot.kind === 'BREAK' || (slot.activityType != null && slot.activityType !== 'KBM');
+}
+
+export function findActiveTeachingSlot(slots: TimeSlot[], day: Day, jpNo: number): TimeSlot | undefined {
+  return slots.find(
+    (s) => s.day === day && s.jpNo === jpNo && s.kind === 'TEACHING' && (s.activityType === 'KBM' || !s.activityType),
+  );
+}
+
+export interface TimelineRow {
+  order: number;
+  start: string;
+  end: string;
+  isKbm: boolean;
+  jpNo?: number;
+  activityType?: string;
+  defaultLabel: string;
+}
+
+export function getTimelineRows(slots: TimeSlot[], defaultJPCount = 8): TimelineRow[] {
+  const orderMap = new Map<number, TimelineRow>();
+
+  for (const s of slots) {
+    if (!orderMap.has(s.order)) {
+      const isKbm = s.kind === 'TEACHING' && (s.activityType === 'KBM' || !s.activityType);
+      orderMap.set(s.order, {
+        order: s.order,
+        start: s.start,
+        end: s.end,
+        isKbm,
+        jpNo: s.jpNo,
+        activityType: s.activityType,
+        defaultLabel: s.label || (s.jpNo ? `JP ${s.jpNo}` : (s.activityName || 'Agenda')),
+      });
+    }
+  }
+
+  const rows = Array.from(orderMap.values()).sort((a, b) => a.order - b.order);
+  if (rows.length > 0) return rows;
+
+  return Array.from({ length: defaultJPCount }, (_, i) => ({
+    order: i + 1,
+    start: '',
+    end: '',
+    isKbm: true,
+    jpNo: i + 1,
+    activityType: 'KBM',
+    defaultLabel: `JP ${i + 1}`,
+  }));
 }

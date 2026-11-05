@@ -8,7 +8,7 @@ describe('struktur waktu KBM', () => {
     const slots = buildTimeSlots(state.settings);
     const monday = slots.filter((slot) => slot.day === 'Senin');
     expect(teachingPeriodsForDay(slots, 'Senin')).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(monday.filter((slot) => slot.kind === 'BREAK')).toHaveLength(2);
+    expect(monday.filter((slot) => slot.kind === 'BREAK')).toHaveLength(3);
     for (let index = 1; index < monday.length; index++) {
       expect(monday[index]!.start).toBe(monday[index - 1]!.end);
     }
@@ -19,6 +19,7 @@ describe('struktur waktu KBM', () => {
     state.settings.maxDailyJP = 10;
     state.settings.teachingPeriodsPerDay = 10;
     state.settings.breakAfterJP = [2, 3, 4, 5, 6, 7];
+    delete state.settings.periodDefinitions;
     const slots = buildTimeSlots(state.settings).filter((slot) => slot.day === 'Senin');
     expect(teachingPeriodsForDay(slots, 'Senin')).toHaveLength(10);
     for (let index = 1; index < slots.length; index++) {

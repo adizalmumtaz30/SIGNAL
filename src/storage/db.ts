@@ -1,6 +1,8 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { AppState } from '../domain/types';
+import type { AppState, ScheduleEntry } from '../domain/types';
 import { createDemoState } from '../domain/seed';
+import { buildTimeSlots, createDefaultPeriodDefinitions } from '../domain/time';
+import { generateSchedule } from '../domain/generator';
 
 const DB_NAME = 'signal-academic-studio';
 const DB_VERSION = 1;
@@ -44,11 +46,61 @@ export async function loadAppState(): Promise<AppState> {
       if (!state.settings.curriculumLeaderNip) state.settings.curriculumLeaderNip = '198204122008011015';
       if (!state.settings.curriculumLeaderTitle) state.settings.curriculumLeaderTitle = 'Waka Bidang Kurikulum';
 
+      // Ensure periodDefinitions has official Upacara and Religi agenda
+      if (!state.settings.periodDefinitions || state.settings.periodDefinitions.length === 0) {
+        state.settings.periodDefinitions = createDefaultPeriodDefinitions(
+          state.settings.teachingPeriodsPerDay ?? 8,
+          [3, 6],
+          state.settings.periodMinutes ?? 40,
+        );
+        state.settings.breakAfterJP = [3, 6];
+      }
+      state.slots = buildTimeSlots(state.settings);
+
+      // Verify schedule entries: purge any non-KBM or invalid slot entries
+      const validSlots = new Map<string, boolean>();
+      for (const slot of state.slots) {
+        if (slot.kind === 'TEACHING' && slot.active && slot.jpNo != null) {
+          validSlots.set(`${slot.day}-${slot.jpNo}`, true);
+        }
+      }
+
+      const isCleanEntry = (e: ScheduleEntry) => validSlots.get(`${e.day}-${e.jpNo}`) === true;
+
+      let scheduleNeedsRegen = false;
+      if (Array.isArray(state.activeSchedule)) {
+        const filtered = state.activeSchedule.filter(isCleanEntry);
+        if (filtered.length !== state.activeSchedule.length) {
+          scheduleNeedsRegen = true;
+        }
+        state.activeSchedule = filtered;
+      }
+
+      if (Array.isArray(state.draft)) {
+        const filteredDraft = state.draft.filter(isCleanEntry);
+        if (filteredDraft.length !== state.draft.length) {
+          scheduleNeedsRegen = true;
+        }
+        state.draft = filteredDraft;
+      }
+
+      // If schedule was compromised or empty, regenerate cleanly
+      if (scheduleNeedsRegen || !state.activeSchedule || state.activeSchedule.length === 0) {
+        const genRes = generateSchedule(state, 42);
+        if (genRes.status === 'SUCCESS' && genRes.candidate) {
+          state.activeSchedule = genRes.candidate.entries;
+          state.candidates = [genRes.candidate];
+          state.draft = null;
+        }
+      }
+
       if (Array.isArray(state.teachers)) {
         state.teachers.forEach((t) => {
           if (!t.roleTitle) t.roleTitle = 'Guru Mapel';
         });
       }
+
+      await db.put(STORE_NAME, { id: 'main', state, savedAt: new Date().toISOString() });
       return state;
     }
     const initial = createDemoState();

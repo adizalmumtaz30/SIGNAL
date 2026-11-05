@@ -1,5 +1,5 @@
 import type { AppState, AttendanceRecord, Holiday, Requirement, SchoolClass, Subject, Teacher } from './types';
-import { buildTimeSlots } from './time';
+import { buildTimeSlots, createDefaultPeriodDefinitions } from './time';
 import { generateSchedule } from './generator';
 
 export function createDemoState(): AppState {
@@ -11,7 +11,8 @@ export function createDemoState(): AppState {
     maxDailyJP: 10,
     teachingPeriodsPerDay: 8,
     activeDays: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
-    breakAfterJP: [2, 5],
+    breakAfterJP: [3, 6],
+    periodDefinitions: createDefaultPeriodDefinitions(8, [3, 6], 40),
     searchLimit: 65000,
     geminiEnabled: false,
 

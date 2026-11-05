@@ -30,14 +30,6 @@ Branch: `redesign/islamic-school-bento`
 - [ ] Responsive + keyboard + contrast regression.
 - [ ] Build dan unit tests dijalankan pada branch hasil.
 
-## Pembaruan storyboard (31 Oktober 2026)
-
-- [x] Arah visual diperbarui: School Workspace Storyboard, tanpa Bento Grid sebagai layout produk.
-- [x] SVG kampus repo diganti menjadi bangunan sekolah konvensional; tidak ada masjid, kubah, atau minaret.
-- [x] Wireframe dan HTML high-fidelity 11 layar dibuat sebagai artefak mandiri dalam paket storyboard.
-- [ ] Artefak HTML mandiri belum disalin sebagai file ke repository branch; paket lokal disediakan terpisah.
-- [ ] CSS aplikasi dan seluruh layar React belum diimplementasikan ulang mengikuti storyboard ini.
-
 ## Truthful validation log
 
 Jangan menandai test/build lulus sampai benar-benar dijalankan di branch ini. Dokumentasi ini menjadi status sumber kebenaran; update setelah setiap validasi.

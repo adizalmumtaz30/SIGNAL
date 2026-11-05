@@ -2,10 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import {
   Activity,
   AlertTriangle,
-  Archive,
   ArrowRight,
-  ArrowUpRight,
-  BarChart3,
   Bell,
   BookOpen,
   CalendarDays,
@@ -17,7 +14,6 @@ import {
   CircleHelp,
   Clock,
   Clock3,
-  Command,
   Download,
   Edit2,
   FileCheck2,
@@ -25,13 +21,12 @@ import {
   Filter,
   GraduationCap,
   History,
+  Home,
   Info,
-  LayoutDashboard,
   LayoutGrid,
   LoaderCircle,
   LockKeyhole,
   Menu,
-  MoreHorizontal,
   Plus,
   RefreshCw,
   Save,
@@ -73,6 +68,7 @@ import {
   buildTimeSlots,
   clockToMinutes,
   createDefaultPeriodDefinitions,
+  getTimelineRows,
   isSlotBlocked,
   teachingPeriodsForDay,
   toClock,
@@ -107,18 +103,47 @@ type ScreenId =
 
 const DatabaseIcon: LucideIcon = Activity;
 
-const navItems: Array<{ id: ScreenId; label: string; icon: LucideIcon; section?: string }> = [
-  { id: 'overview', label: 'Ringkasan', icon: LayoutDashboard, section: 'WORKSPACE' },
-  { id: 'schedule', label: 'Jadwal Pelajaran', icon: CalendarDays },
-  { id: 'workload', label: 'Beban Guru', icon: BarChart3 },
-  { id: 'attendance', label: 'Absensi Guru', icon: UserCheck },
-  { id: 'generator', label: 'Generator', icon: WandSparkles },
-  { id: 'master', label: 'Data Master', icon: DatabaseIcon },
-  { id: 'requirements', label: 'Kebutuhan & Alokasi', icon: BookOpen },
-  { id: 'validation', label: 'Validasi & Konflik', icon: ShieldCheck, section: 'GOVERNANCE' },
-  { id: 'history', label: 'Riwayat Versi', icon: History },
-  { id: 'backup', label: 'Ekspor & Backup', icon: Archive, section: 'DATA CONTROL' },
-  { id: 'settings', label: 'Jam KBM & Pengaturan', icon: Clock },
+interface NavGroup {
+  sectionTitle: string;
+  items: Array<{ id: ScreenId; label: string; icon: LucideIcon }>;
+}
+
+const navGroups: NavGroup[] = [
+  {
+    sectionTitle: 'RINGKASAN',
+    items: [
+      { id: 'overview', label: 'Beranda', icon: Home },
+    ],
+  },
+  {
+    sectionTitle: 'PERENCANAAN',
+    items: [
+      { id: 'master', label: 'Data Master', icon: DatabaseIcon },
+      { id: 'requirements', label: 'Kebutuhan & Alokasi', icon: BookOpen },
+      { id: 'generator', label: 'Schedule Generator', icon: WandSparkles },
+    ],
+  },
+  {
+    sectionTitle: 'OPERASIONAL',
+    items: [
+      { id: 'schedule', label: 'Jadwal Pelajaran', icon: CalendarDays },
+      { id: 'validation', label: 'Validasi & Konflik', icon: ShieldCheck },
+    ],
+  },
+  {
+    sectionTitle: 'GURU',
+    items: [
+      { id: 'workload', label: 'Beban Guru', icon: Users },
+      { id: 'attendance', label: 'Presensi Guru', icon: UserCheck },
+    ],
+  },
+  {
+    sectionTitle: 'KONTROL & SISTEM',
+    items: [
+      { id: 'history', label: 'Riwayat & Cadangan Data', icon: History },
+      { id: 'settings', label: 'Pengaturan', icon: Settings2 },
+    ],
+  },
 ];
 
 type MasterTab = 'classes' | 'teachers' | 'subjects';
@@ -140,19 +165,19 @@ const emptyRequirementForm = { classId: '', subjectId: '', teacherId: '', requir
 
 function titleForScreen(screen: ScreenId) {
   const titles: Record<ScreenId, string> = {
-    overview: 'Beranda kerja operator',
-    schedule: 'Jadwal pelajaran',
-    workload: 'Statistik beban guru',
-    attendance: 'Presensi & absensi guru',
-    generator: 'Schedule generator',
-    master: 'Data master',
-    requirements: 'Kebutuhan & alokasi JP',
-    validation: 'Validasi & konflik',
-    history: 'Riwayat versi',
-    backup: 'Ekspor & backup',
-    settings: 'Pengaturan jam KBM & durasi JP',
+    overview: 'Beranda Kerja Operator',
+    schedule: 'Jadwal Pelajaran',
+    workload: 'Statistik Beban Guru',
+    attendance: 'Presensi Guru',
+    generator: 'Schedule Generator',
+    master: 'Data Master Madrasah',
+    requirements: 'Kebutuhan & Alokasi JP',
+    validation: 'Validasi & Kepatuhan Aturan',
+    history: 'Riwayat Versi & Cadangan Data',
+    backup: 'Ekspor & Cadangan Data',
+    settings: 'Pengaturan Workspace',
   };
-  return titles[screen];
+  return titles[screen] || 'SIGNAL';
 }
 
 function formatDate(date = new Date()) {
@@ -187,6 +212,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState<ScreenId>('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [masterTab, setMasterTab] = useState<MasterTab>('classes');
   const [addType, setAddType] = useState<AddType>(null);
@@ -201,7 +227,6 @@ export default function App() {
   const [selectedClass, setSelectedClass] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastGeneratorResult, setLastGeneratorResult] = useState<{ status: GeneratorStatus; message: string; nodes: number } | null>(null);
-  const [globalSearch, setGlobalSearch] = useState('');
   const [expandedIssue, setExpandedIssue] = useState<string | null>(null);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
@@ -330,17 +355,21 @@ export default function App() {
     setScreen('schedule');
   };
 
-  // Drag and Drop Placement with Deterministic Collision Guard
+  // Drag and Drop Placement with Deterministic Collision Guard (Defense-in-depth)
   const handleDropSlot = (source: { classId: string; day: Day; jpNo: number }, target: { day: Day; jpNo: number }) => {
     if (!workspace) return;
     if (source.day === target.day && source.jpNo === target.jpNo) return;
 
-    // 1. Check if target slot is a blocked activity (Upacara, Istirahat, Religi, Kegiatan Lain)
-    const targetSlotDef = workspace.slots.find(
-      (s) => s.day === target.day && (s.order === target.jpNo || (s.kind === 'TEACHING' && s.jpNo === target.jpNo)),
+    // 1. Resolve target slot: MUST be an active TEACHING slot for target day and jpNo
+    const validTargetSlot = workspace.slots.find(
+      (s) => s.day === target.day && s.kind === 'TEACHING' && s.active && s.jpNo === target.jpNo,
     );
-    if (isSlotBlocked(targetSlotDef)) {
-      notify(`Tidak dapat dipindahkan: Jam tersebut diblokir oleh kegiatan ${targetSlotDef?.label || 'non-KBM'}.`, 'error');
+    if (!validTargetSlot) {
+      const nonKbmSlot = workspace.slots.find((s) => s.day === target.day && s.kind === 'BREAK');
+      notify(
+        `Tidak dapat dipindahkan: Target bukan slot KBM aktif${nonKbmSlot ? ` (terdapat kegiatan ${nonKbmSlot.label || nonKbmSlot.activityType})` : ''}.`,
+        'error',
+      );
       return;
     }
 
@@ -407,6 +436,13 @@ export default function App() {
 
   const openSlotEditor = (classId: string, day: Day, jpNo: number) => {
     if (!workspace) return;
+    const targetSlot = workspace.slots.find(
+      (s) => s.day === day && s.kind === 'TEACHING' && s.active && s.jpNo === jpNo,
+    );
+    if (!targetSlot) {
+      notify(`Slot ${day} JP ${jpNo} bukan slot KBM aktif yang dapat diisi.`, 'warning');
+      return;
+    }
     const entry = getEntry(workspace, classId, day, jpNo);
     setEditingSlot({ classId, day, jpNo });
     setEditingSubject(entry?.subjectId ?? '');
@@ -418,6 +454,16 @@ export default function App() {
     event.preventDefault();
     if (!workspace || !editingSlot) return;
     const { classId, day, jpNo } = editingSlot;
+
+    // Defense-in-depth: Re-verify target slot is an active TEACHING slot
+    const targetSlot = workspace.slots.find(
+      (s) => s.day === day && s.kind === 'TEACHING' && s.active && s.jpNo === jpNo,
+    );
+    if (!targetSlot) {
+      notify(`Slot ${day} JP ${jpNo} bukan slot KBM aktif yang valid. Perubahan dibatalkan.`, 'error');
+      setEditingSlot(null);
+      return;
+    }
 
     let targetTeacherId = editingTeacher;
     let nextTeachers = [...workspace.teachers];
@@ -735,83 +781,103 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className={`sidebar-backdrop ${sidebarOpen ? 'is-visible' : ''}`} onClick={() => setSidebarOpen(false)} />
-      <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
-        <div className="brand-lockup">
-          <div className="brand-mark"><span>S</span><i /></div>
-          <div className="brand-text"><strong>SIGNAL</strong><span>ACADEMIC STUDIO</span></div>
-          <button className="icon-button sidebar-close" aria-label="Tutup menu" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
+      <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+        <div className="sakala-brand" onClick={() => navigate('overview')} title="SIGNAL — The Grand Academic Atelier">
+          <div className="v3-brandmark">S</div>
+          {!sidebarCollapsed && (
+            <div>
+              <h2 className="sakala-brand-title">SIGNAL</h2>
+              <span className="sakala-brand-subtitle">THE GRAND ACADEMIC ATELIER</span>
+            </div>
+          )}
+          <button
+            type="button"
+            className="round-btn sidebar-toggle-btn"
+            aria-label={sidebarCollapsed ? 'Perluas menu' : 'Perkecil menu'}
+            onClick={(e) => { e.stopPropagation(); setSidebarCollapsed(!sidebarCollapsed); }}
+            title={sidebarCollapsed ? 'Perluas Sidebar' : 'Perkecil Sidebar'}
+            style={{ width: '22px', height: '22px', position: 'absolute', right: '0', top: '0', background: 'transparent', border: 'none', color: '#b5c9bd', display: 'grid', placeItems: 'center' }}
+          >
+            {sidebarCollapsed ? <ChevronRight size={13} /> : <ChevronRight size={13} style={{ transform: 'rotate(180deg)' }} />}
+          </button>
         </div>
-        <div className="workspace-chip">
-          <div className="workspace-seal"><GraduationCap size={18} /></div>
-          <div><small>WORKSPACE</small><strong>{workspace.settings.academicYear}</strong></div>
-          <ChevronDown size={14} />
-        </div>
-        <nav className="side-nav" aria-label="Navigasi utama">
-          {navItems.map((item) => (
-            <div key={item.id}>
-              {item.section && <div className="nav-section-label">{item.section}</div>}
-              <button
-                className={`nav-item ${screen === item.id ? 'active' : ''}`}
-                onClick={() => navigate(item.id)}
-                aria-current={screen === item.id ? 'page' : undefined}
-              >
-                <item.icon size={18} strokeWidth={screen === item.id ? 2.2 : 1.8} />
-                <span>{item.label}</span>
-                {item.id === 'validation' && report && report.hardErrorCount > 0 && <span className="nav-count">{report.hardErrorCount}</span>}
-                {item.id === 'schedule' && workspace.draft && <span className="nav-dot" />}
-              </button>
+
+        <nav className="sakala-nav" aria-label="Navigasi alur kerja">
+          {navGroups.map((group) => (
+            <div key={group.sectionTitle} className="sakala-nav-group">
+              {!sidebarCollapsed && (
+                <div className="sakala-nav-section-title">{group.sectionTitle}</div>
+              )}
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  className={`sakala-nav-item ${screen === item.id ? 'active' : ''}`}
+                  onClick={() => navigate(item.id)}
+                  aria-current={screen === item.id ? 'page' : undefined}
+                  title={item.label}
+                >
+                  <item.icon className="icon" strokeWidth={screen === item.id ? 2.2 : 1.8} />
+                  {!sidebarCollapsed && <span>{item.label}</span>}
+                  {item.id === 'validation' && report && report.hardErrorCount > 0 && (
+                    <span className="sakala-nav-badge">{report.hardErrorCount}</span>
+                  )}
+                </button>
+              ))}
             </div>
           ))}
         </nav>
-        <div className="sidebar-spacer" />
-        <div className="sidebar-bottom-card">
-          <div className="sidebar-orbit orbit-one" /><div className="sidebar-orbit orbit-two" />
-          <div className="sidebar-bottom-icon"><Sparkles size={17} /></div>
-          <div className="sidebar-bottom-kicker">SIGNAL INTELLIGENCE</div>
-          <strong>Thoughtful schedules.<br />Confident decisions.</strong>
-          <span>Validator deterministik · local-first</span>
-          <button onClick={() => navigate('settings')}>Lihat pengaturan <ArrowRight size={14} /></button>
-        </div>
-        <div className="sidebar-profile">
-          <div className="profile-avatar">OP</div>
-          <div className="profile-copy"><strong>Operator Madrasah</strong><span>Kurikulum & Presensi</span></div>
-          <MoreHorizontal size={18} className="profile-more" />
-        </div>
-        <div className="sidebar-footnote"><span className="tiny-status-dot" /> LOCAL WORKSPACE <span>·</span> v1.2.0</div>
+
+        {!sidebarCollapsed && (
+          <div className="side-foot">
+            <b>THE GRAND ACADEMIC ATELIER</b>
+            <span>Local workspace · TP {workspace.settings.academicYear}</span>
+          </div>
+        )}
       </aside>
 
-      <main className="main-shell">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button className="icon-button mobile-menu-trigger" aria-label="Buka menu" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
-            <div className="breadcrumb"><span>Workspace</span><ChevronRight size={13} /><strong>{currentTitle}</strong></div>
-          </div>
-          <div className="topbar-actions">
-            <div className="global-search">
-              <Search size={16} />
-              <input
-                value={globalSearch}
-                onChange={(e) => setGlobalSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { setMasterSearch(globalSearch); navigate('master'); } }}
-                placeholder="Cari kelas, guru, atau mapel…"
-              />
-              <kbd><Command size={10} /> K</kbd>
+      <main className={`main-shell ${sidebarCollapsed ? "main-shell-expanded" : ""}`}>
+        <header className="sakala-topbar">
+          <div className="sakala-header-greeting">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button className="icon-button mobile-menu-trigger" aria-label="Buka menu" onClick={() => setSidebarOpen(true)}>
+                <Menu size={20} />
+              </button>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>SIGNAL</span>
+                  <span style={{ color: 'var(--gold)', fontWeight: 800 }}>/</span>
+                  <b style={{ color: 'var(--ink)' }}>{currentTitle}</b>
+                </div>
+                <h1 style={{ marginTop: '1px' }}>{screen === 'overview' ? 'Selamat Datang, Operator' : currentTitle}</h1>
+              </div>
             </div>
+            <p>{screen === 'overview' ? 'Ringkasan status jadwal, kepatuhan alokasi, dan alur operasional madrasah' : `Ruang kerja operasional SIGNAL · ${workspace.settings.schoolName}`}</p>
+          </div>
+
+          <div className="sakala-header-controls">
+            <div className="sakala-context-badge" title="Tahun Ajaran & Semester Aktif">
+              <CalendarDays size={14} />
+              <span>TP {workspace.settings.academicYear} · Sem. {workspace.settings.semester}</span>
+            </div>
+            <div className="sakala-header-divider" />
             <button
-              className="icon-button notification-button"
-              aria-label="Status sistem"
+              className="sakala-bell-btn"
+              aria-label="Pemeriksaan Validasi"
               onClick={() => setQuickValidationOpen(true)}
-              title="Periksa Jadwal (Quick Validation Report)"
+              title={report?.hardErrorCount ? `Ada ${report.hardErrorCount} masalah perlu ditinjau` : 'Jadwal 100% Bebas Bentrok'}
             >
-              <Bell size={18} />
-              <span className={report?.hardErrorCount ? 'notification-dot danger' : 'notification-dot'} />
+              <Bell size={16} />
+              {report && report.hardErrorCount > 0 && (
+                <span className="sakala-bell-badge">{report.hardErrorCount}</span>
+              )}
             </button>
-            <div className="topbar-divider" />
-            <button className="topbar-profile" onClick={() => navigate('settings')}>
-              <div className="profile-avatar small-avatar">OP</div>
-              <div className="topbar-profile-copy"><strong>Operator</strong><span>Administrator</span></div>
-              <ChevronDown size={14} />
-            </button>
+            <div
+              className="sakala-avatar-circle"
+              onClick={() => navigate('settings')}
+              title="Profil Administrator"
+            >
+              OP
+            </div>
           </div>
         </header>
 
@@ -996,13 +1062,87 @@ export default function App() {
       </main>
 
       {/* Manual Slot Editor Modal */}
-      {editingSlot && (
+      {editingSlot && (() => {
+        const slotKbmDef = workspace.slots.find(
+          (s) => s.day === editingSlot.day && s.kind === 'TEACHING' && s.active && s.jpNo === editingSlot.jpNo
+        );
+        const activeSched = workspace.draft ?? workspace.activeSchedule ?? [];
+        const teacherConflict = editingTeacher && editingTeacher !== '__NEW_CUSTOM__'
+          ? activeSched.find(
+              (e: ScheduleEntry) => e.day === editingSlot.day && e.jpNo === editingSlot.jpNo && e.teacherId === editingTeacher && e.classId !== editingSlot.classId
+            )
+          : null;
+        const conflictClass = teacherConflict ? getClass(workspace, teacherConflict.classId) : null;
+
+        return (
         <Modal
-          title="Edit Penempatan Pelajaran"
-          subtitle={`${getClass(workspace, editingSlot.classId)?.name ?? ''} · ${editingSlot.day} · JP ${editingSlot.jpNo}`}
+          title="Penempatan Pelajaran Jam KBM"
+          subtitle={`Kelas ${getClass(workspace, editingSlot.classId)?.name ?? ''} · ${editingSlot.day} · JP ke-${editingSlot.jpNo}`}
           onClose={() => setEditingSlot(null)}
           icon={CalendarDays}
         >
+          <div style={{ padding: '14px 20px 0 20px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
+                background: '#edf6f2',
+                borderRadius: '10px',
+                border: '1.5px solid #c2ded0',
+                gap: '10px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={16} color="#16483f" />
+                <div>
+                  <strong style={{ color: '#103f3e', fontSize: '13px', display: 'block' }}>
+                    Alokasi Jam KBM: {slotKbmDef ? `${slotKbmDef.start} – ${slotKbmDef.end} WIB` : `JP ${editingSlot.jpNo}`}
+                  </strong>
+                  <span style={{ color: '#4a6b62', fontSize: '11px' }}>
+                    Hari {editingSlot.day} · JP ke-{editingSlot.jpNo} (Durasi {workspace.settings.periodMinutes || 40} menit/JP)
+                  </span>
+                </div>
+              </div>
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: '#1f6952',
+                  background: '#d4eedf',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                ✓ JAM KBM AKTIF
+              </span>
+            </div>
+
+            {teacherConflict && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '9px 12px',
+                  background: '#fdf2f0',
+                  border: '1px solid #f9ccc6',
+                  borderRadius: '8px',
+                  color: '#a03c30',
+                  fontSize: '11.5px',
+                  marginTop: '10px',
+                }}
+              >
+                <AlertTriangle size={15} color="#b24c3d" style={{ flexShrink: 0 }} />
+                <span>
+                  <strong>Peringatan Bentrok:</strong> Guru ini sudah terjadwal mengajar di <strong>Kelas {conflictClass?.name || 'Lain'}</strong> pada Jam KBM yang sama ({editingSlot.day}, JP {editingSlot.jpNo} {slotKbmDef ? `· ${slotKbmDef.start}–${slotKbmDef.end}` : ''}).
+                </span>
+              </div>
+            )}
+          </div>
           <form className="modal-form" onSubmit={saveSlotEditor}>
             <div className="field-group">
               <label>Mata pelajaran</label>
@@ -1074,7 +1214,8 @@ export default function App() {
             </div>
           </form>
         </Modal>
-      )}
+        );
+      })()}
 
       {/* Quick Validation Report Modal */}
       <QuickValidationModal
@@ -1154,20 +1295,71 @@ function PageHeading({ kicker, title, description, actions }: { kicker: string; 
   );
 }
 
-function Button({ children, variant = 'primary', icon: Icon, onClick, disabled, type = 'button', className = '', title }: { children: ReactNode; variant?: 'primary' | 'secondary' | 'quiet' | 'danger' | 'hero-ghost'; icon?: LucideIcon; onClick?: () => void; disabled?: boolean; type?: 'button' | 'submit'; className?: string; title?: string }) {
-  return <button type={type} disabled={disabled} title={title} className={`button button-${variant} ${className}`} onClick={onClick}>{Icon && <Icon size={15} />}{children}</button>;
+function Button({
+  children,
+  variant = 'primary',
+  size = 'md',
+  icon: Icon,
+  onClick,
+  disabled,
+  type = 'button',
+  className = '',
+  title,
+}: {
+  children: ReactNode;
+  variant?: 'primary' | 'secondary' | 'quiet' | 'danger' | 'hero-ghost';
+  size?: 'sm' | 'md' | 'lg';
+  icon?: LucideIcon;
+  onClick?: () => void;
+  disabled?: boolean;
+  type?: 'button' | 'submit';
+  className?: string;
+  title?: string;
+}) {
+  const sizeClass = size === 'sm' ? 'button-sm' : size === 'lg' ? 'button-lg' : '';
+  const iconSize = size === 'sm' ? 13 : size === 'lg' ? 17 : 15;
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      title={title}
+      className={`button button-${variant} ${sizeClass} ${className}`.trim()}
+      onClick={onClick}
+    >
+      {Icon && <Icon size={iconSize} className="btn-icon" />}
+      <span className="btn-label">{children}</span>
+    </button>
+  );
 }
 
 function Card({ children, className = '', title, eyebrow, action }: { children: ReactNode; className?: string; title?: string; eyebrow?: string; action?: ReactNode }) {
   return <section className={`surface-card ${className}`}>{(title || eyebrow || action) && <div className="card-heading"><div>{eyebrow && <div className="card-eyebrow">{eyebrow}</div>}{title && <h3>{title}</h3>}</div>{action}</div>}{children}</section>;
 }
 
-function StatCard({ label, value, sub, icon: Icon, trend, tone = 'teal' }: { label: string; value: string | number; sub: string; icon: LucideIcon; trend?: string; tone?: 'teal' | 'sand' | 'blue' | 'rose' }) {
-  return <div className={`stat-card tone-${tone}`}><div className="stat-top"><span>{label}</span><div className="stat-icon"><Icon size={17} /></div></div><div className="stat-value-row"><strong>{value}</strong>{trend && <span className="stat-trend"><ArrowUpRight size={12} />{trend}</span>}</div><div className="stat-sub">{sub}</div><div className="stat-accent" /></div>;
-}
-
-function StatusPill({ status, children }: { status: 'success' | 'warning' | 'danger' | 'neutral' | 'info'; children: ReactNode }) {
-  return <span className={`status-pill status-${status}`}><i />{children}</span>;
+function StatusPill({
+  status,
+  children,
+  icon: CustomIcon,
+  className = '',
+}: {
+  status: 'success' | 'warning' | 'danger' | 'neutral' | 'info';
+  children: ReactNode;
+  icon?: LucideIcon;
+  className?: string;
+}) {
+  const Icon = CustomIcon || (
+    status === 'success' ? CheckCircle2 :
+    status === 'warning' ? AlertTriangle :
+    status === 'danger' ? XCircle :
+    status === 'info' ? Info :
+    Activity
+  );
+  return (
+    <span className={`status-pill status-${status} ${className}`.trim()} role="status">
+      <Icon size={12} className="status-pill-icon" aria-hidden="true" />
+      <span className="status-pill-text">{children}</span>
+    </span>
+  );
 }
 
 function EmptyState({ icon: Icon = CircleHelp, title, description, action }: { icon?: LucideIcon; title: string; description: string; action?: ReactNode }) {
@@ -1189,20 +1381,85 @@ function Modal({ title, subtitle, icon: Icon, children, onClose }: { title: stri
   );
 }
 
+function TablePagination({
+  totalItems,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  totalItems: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number) => void;
+  onPageSizeChange: (s: number) => void;
+}) {
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(totalItems / pageSize));
+  const from = totalItems === 0 ? 0 : pageSize === 0 ? 1 : (page - 1) * pageSize + 1;
+  const to = pageSize === 0 ? totalItems : Math.min(page * pageSize, totalItems);
+
+  return (
+    <div className="table-pagination">
+      <div className="pagination-left">
+        <span>Menampilkan <strong>{from}–{to}</strong> dari <strong>{totalItems}</strong> baris</span>
+        <div className="pagination-size-select">
+          <span>Baris:</span>
+          <select
+            className="page-select"
+            value={pageSize}
+            onChange={(e) => {
+              onPageSizeChange(Number(e.target.value));
+              onPageChange(1);
+            }}
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={0}>Semua</option>
+          </select>
+        </div>
+      </div>
+      <div className="pagination-right">
+        <button
+          className="page-btn"
+          disabled={page <= 1 || pageSize === 0}
+          onClick={() => onPageChange(page - 1)}
+          title="Halaman sebelumnya"
+        >
+          ‹
+        </button>
+        <span style={{ fontSize: '11.5px', fontWeight: 600, padding: '0 6px' }}>
+          Hal {page} / {totalPages}
+        </span>
+        <button
+          className="page-btn"
+          disabled={page >= totalPages || pageSize === 0}
+          onClick={() => onPageChange(page + 1)}
+          title="Halaman berikutnya"
+        >
+          ›
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * SECTION B: BERANDA RINGKAS (OPERATOR CENTER)
+ * SAKALA V2 Modern / SIGNAL Warm Ivory & Mocha Architectural Aesthetic
  */
 function OperatorOverviewScreen({
   state,
   report,
   masterIssues,
-  readiness,
+  readiness: _readiness,
   occupiedSlots,
   totalWeeklyCapacity,
   onNavigate,
   onGenerate,
   isGenerating,
-  onOpenPdfModal,
+  onOpenPdfModal: _onOpenPdfModal,
   onOpenValidationModal,
 }: {
   state: AppState;
@@ -1217,228 +1474,225 @@ function OperatorOverviewScreen({
   onOpenPdfModal: () => void;
   onOpenValidationModal: () => void;
 }) {
-  const hasSchedule = !!(state.draft?.length || state.activeSchedule?.length);
+  const activeClasses = state.classes.filter((c) => c.isActive);
+  const activeTeachers = state.teachers.filter((t) => t.isActive);
+  const classCount = activeClasses.length;
+  const teacherCount = activeTeachers.length;
   const totalErrors = masterIssues.filter((i) => i.severity === 'error').length + report.hardErrorCount;
-  const classCount = state.classes.filter((c) => c.isActive).length;
-  const teacherCount = state.teachers.filter((t) => t.isActive).length;
-  const subjectCount = state.subjects.filter((s) => s.isActive).length;
+  const capacityPercent = totalWeeklyCapacity > 0 ? Math.round((occupiedSlots / totalWeeklyCapacity) * 100) : 46;
+
+  const classRows = activeClasses.slice(0, 6);
 
   return (
-    <>
-      {/* Welcome line */}
-      <div className="welcome-line">
-        <div>
-          <span className="welcome-greeting">PUSAT KERJA OPERATOR <span className="welcome-sparkle">✦</span></span>
-          <div className="welcome-date">{formatDate()}</div>
-        </div>
-        <div className="welcome-meta">
-          <div className="privacy-chip"><LockKeyhole size={13} /> LOCAL-FIRST · PRIVAT</div>
-          <div className="workspace-badge"><span className="tiny-status-dot" /> T.A. {state.settings.academicYear}</div>
-        </div>
-      </div>
-
-      {/* Hero Panel with Primary "Buat Jadwal" Button */}
-      <div className="hero-panel">
-        <div className="hero-text">
-          <div className="hero-label">
-            <span className="hero-label-dot" /> SEMESTER {state.settings.semester.toUpperCase()} · {state.settings.schoolName}
+    <div className="overview-page-wrapper">
+      {/* 1. PLATE 01: GRAND ATELIER OPERATIONAL HERO */}
+      <section className="hero">
+        <div style={{ position: 'relative', zIndex: 2 }}>
+          <div className="kicker">
+            STATUS JADWAL · SEMESTER {state.settings.semester.toUpperCase()} {state.settings.academicYear}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', margin: '16px 0 10px' }}>
-            <h1 style={{ margin: 0 }}>Penyusunan Jadwal &amp; Presensi.</h1>
-            <InfoNotice text="Satu klik untuk membuat jadwal pelajaran otomatis yang bebas bentrok guru dan kelas. Validator deterministik menguji seluruh aturan secara ketat." />
-          </div>
-
-          <div className="hero-actions">
-            <Button
-              icon={WandSparkles}
-              onClick={onGenerate}
-              disabled={isGenerating}
-            >
-              {isGenerating ? 'Sedang Menyusun Jadwal…' : 'Buat Jadwal'}
-            </Button>
-            <Button
-              variant="hero-ghost"
-              icon={CalendarDays}
-              onClick={() => onNavigate('schedule')}
-            >
-              Lihat Jadwal
-            </Button>
-            <Button
-              variant="hero-ghost"
-              icon={Download}
-              onClick={onOpenPdfModal}
-            >
-              Ekspor PDF
-            </Button>
-          </div>
-
-          <div className="hero-footnotes">
-            <span><ShieldCheck size={14} /> Validator Otomatis</span>
-            <span><Clock size={14} /> {state.settings.periodMinutes} Menit/JP</span>
-            <span><Sparkles size={14} /> AI Opsional</span>
+          <h3>
+            {report.valid
+              ? 'Jadwal Siap Diperiksa & Diterbitkan'
+              : totalErrors > 0
+              ? `Terdapat ${totalErrors} Bentrok Jadwal Perlu Diperbaiki`
+              : 'Lengkapi Alokasi Kebutuhan JP & Susun Jadwal'}
+          </h3>
+          <p>
+            {report.valid
+              ? `Seluruh aturan wajib KBM terpenuhi (${occupiedSlots} JP teralokasi, 0 bentrok guru). Anda dapat langsung memeriksa matriks atau mencetak jadwal resmi madrasah.`
+              : totalErrors > 0
+              ? `Ditemukan pelanggaran jam mengajar guru atau bentrok ruang kelas. Selesaikan konflik sebelum menerbitkan jadwal resmi.`
+              : `Tentukan jam mengajar guru per kelas di menu Kebutuhan JP, kemudian jalankan penyusunan otomatis.`}
+          </p>
+          <div className="actions" style={{ marginTop: '14px' }}>
+            {totalErrors > 0 ? (
+              <>
+                <button type="button" className="btn gold" onClick={() => onNavigate('validation')}>
+                  Periksa Sekarang &rarr;
+                </button>
+                <button type="button" className="btn" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' }} onClick={onGenerate} disabled={isGenerating}>
+                  {isGenerating ? 'Menyusun…' : '✦ Generate Ulang'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn gold" onClick={() => onNavigate('schedule')}>
+                  Buka Matriks Jadwal &rarr;
+                </button>
+                <button type="button" className="btn" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' }} onClick={() => onNavigate('schedule')}>
+                  Cetak Dokumen PDF
+                </button>
+              </>
+            )}
           </div>
         </div>
+      </section>
 
-        <div className="hero-art" aria-hidden="true">
-          <div className="hero-orbit hero-orbit-a" />
-          <div className="hero-orbit hero-orbit-b" />
-          <div className="hero-glow" />
-          <div className="hero-art-top">
-            <span>STATUS KESIAPAN</span>
-            <span className="art-live-dot" />AKTIF
+      {/* 2. PLATE 01: 4-KPI JEWEL METRIC STRIP */}
+      <div className="stats">
+        <div className="stat" onClick={() => onNavigate('master')} style={{ cursor: 'pointer', '--accent': '#B39A68' } as React.CSSProperties}>
+          <div className="label">ROMBEL AKTIF</div>
+          <div className="value">{classCount}</div>
+          <div className="foot">Seluruh kelas terdata</div>
+        </div>
+
+        <div className="stat" onClick={() => onNavigate('schedule')} style={{ cursor: 'pointer', '--accent': '#2D8066' } as React.CSSProperties}>
+          <div className="label">ALOKASI KBM</div>
+          <div className="value">{capacityPercent}%</div>
+          <div className="foot">{occupiedSlots} / {totalWeeklyCapacity} JP dari kebutuhan</div>
+        </div>
+
+        <div className="stat" onClick={() => onOpenValidationModal()} style={{ cursor: 'pointer', '--accent': '#334F70' } as React.CSSProperties}>
+          <div className="label">KONFLIK KERAS</div>
+          <div className="value" style={{ color: totalErrors > 0 ? 'var(--red)' : 'var(--ink)' }}>
+            {totalErrors === 0 ? '0' : totalErrors}
           </div>
-          <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ fontSize: '24px', fontWeight: 800, color: '#fbf7e8' }}>
-              {hasSchedule && report.valid ? 'Siap Ditinjau' : totalErrors > 0 ? 'Perlu Tindakan' : 'Data Siap'}
-            </div>
-            <span style={{ fontSize: '10px', color: '#a9c3b7' }}>
-              {totalErrors > 0
-                ? `${totalErrors} masalah perlu diperbaiki sebelum publikasi.`
-                : 'Tidak ada konflik keras terdeteksi pada jadwal.'}
-            </span>
-          </div>
-          <div className="hero-art-foot">
-            <span><i /> {hasSchedule ? 'DRAFT AKTIF' : 'BELUM ADA JADWAL'}</span>
-            <span>{state.settings.activeDays.length} HARI · {occupiedSlots}/{totalWeeklyCapacity} JP</span>
-          </div>
+          <div className="foot">{totalErrors === 0 ? 'Tidak ada bentrok' : 'Perlu tindakan segera'}</div>
+        </div>
+
+        <div className="stat" onClick={() => onNavigate('workload')} style={{ cursor: 'pointer', '--accent': '#927D98' } as React.CSSProperties}>
+          <div className="label">GURU TERJADWAL</div>
+          <div className="value">{teacherCount}</div>
+          <div className="foot">Beban dihitung aktual</div>
         </div>
       </div>
 
-      {/* Quick Action Buttons Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '16px' }}>
-        <button
-          className="button button-secondary"
-          style={{ height: '48px', justifyContent: 'flex-start', padding: '0 16px' }}
-          onClick={() => onNavigate('master')}
-        >
-          <DatabaseIcon size={17} style={{ color: '#2f7771' }} />
-          <span style={{ fontWeight: 700 }}>Data Sekolah</span>
-        </button>
-
-        <button
-          className="button button-secondary"
-          style={{ height: '48px', justifyContent: 'flex-start', padding: '0 16px' }}
-          onClick={() => onNavigate('schedule')}
-        >
-          <CalendarDays size={17} style={{ color: '#bc945e' }} />
-          <span style={{ fontWeight: 700 }}>Lihat Jadwal</span>
-        </button>
-
-        <button
-          className="button button-secondary"
-          style={{ height: '48px', justifyContent: 'flex-start', padding: '0 16px' }}
-          onClick={() => onNavigate('workload')}
-        >
-          <BarChart3 size={17} style={{ color: '#678ba6' }} />
-          <span style={{ fontWeight: 700 }}>Beban Guru</span>
-        </button>
-
-        <button
-          className="button button-secondary"
-          style={{ height: '48px', justifyContent: 'flex-start', padding: '0 16px' }}
-          onClick={() => onNavigate('attendance')}
-        >
-          <UserCheck size={17} style={{ color: '#49886d' }} />
-          <span style={{ fontWeight: 700 }}>Absensi Guru</span>
-        </button>
-
-        <button
-          className="button button-secondary"
-          style={{ height: '48px', justifyContent: 'flex-start', padding: '0 16px' }}
-          onClick={onOpenPdfModal}
-        >
-          <Download size={17} style={{ color: '#c8766a' }} />
-          <span style={{ fontWeight: 700 }}>Ekspor PDF</span>
-        </button>
-      </div>
-
-      {/* Summary KPI Cards */}
-      <div className="stat-grid" style={{ marginTop: '16px' }}>
-        <StatCard
-          label="Kelas Terdaftar"
-          value={String(classCount).padStart(2, '0')}
-          sub="Kelas KBM aktif"
-          icon={GraduationCap}
-          tone="teal"
-        />
-        <StatCard
-          label="Guru Pengampu"
-          value={String(teacherCount).padStart(2, '0')}
-          sub="Kualifikasi mapel tercatat"
-          icon={Users}
-          tone="sand"
-        />
-        <StatCard
-          label="Mata Pelajaran"
-          value={String(subjectCount).padStart(2, '0')}
-          sub="Mapel kurikulum MTs"
-          icon={BookOpen}
-          tone="blue"
-        />
-        <StatCard
-          label="Kesiapan Jadwal"
-          value={`${readiness}%`}
-          sub={totalErrors > 0 ? `${totalErrors} hal wajib perlu ditinjau` : 'Seluruh data siap'}
-          icon={ShieldCheck}
-          tone={totalErrors > 0 ? 'rose' : 'teal'}
-        />
-      </div>
-
-      {/* Only Actionable Issues List */}
-      {totalErrors > 0 && (
-        <div className="surface-card" style={{ marginTop: '16px', borderLeft: '4px solid #c8766a' }}>
-          <div className="card-heading">
+      {/* 3. PLATE 01: SPLIT WORKSPACE SECTION */}
+      <div className="split">
+        {/* Left: Status per Rombel Panel */}
+        <div className="panel">
+          <div className="panel-head">
             <div>
-              <div className="card-eyebrow">ACTION REQUIRED</div>
-              <h3 style={{ color: '#b24c3d' }}>{totalErrors} Masalah Membutuhkan Tindakan</h3>
+              <div className="panel-title">Status per Rombel</div>
+              <div className="muted">{classCount} kelas aktif terdata</div>
             </div>
-            <button className="button button-secondary" onClick={onOpenValidationModal} style={{ fontSize: '11px', height: '32px' }}>
-              Buka Quick Report <ArrowRight size={13} />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Button variant="secondary" size="sm" icon={BookOpen} onClick={() => onNavigate('requirements')}>
+                Kelola Kebutuhan JP
+              </Button>
+              <Button variant="secondary" size="sm" icon={CalendarDays} onClick={() => onNavigate('schedule')}>
+                Lihat Jadwal
+              </Button>
+            </div>
+          </div>
+
+          <div className="tablewrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ width: '38px' }}>#</th>
+                  <th>KELAS</th>
+                  <th>TERISI</th>
+                  <th>STATUS</th>
+                  <th style={{ textAlign: 'right' }}>AKSI</th>
+                </tr>
+              </thead>
+              <tbody>
+                {classRows.map((cls, idx) => {
+                  const reqs = state.requirements.filter((r) => r.classId === cls.id);
+                  const totalReq = reqs.reduce((sum, r) => sum + r.requiredJP, 0);
+                  const classEntries = (state.draft ?? state.activeSchedule ?? []).filter((e) => e.classId === cls.id);
+                  const isComplete = totalReq > 0 && classEntries.length >= totalReq;
+                  return (
+                    <tr key={cls.id}>
+                      <td style={{ color: 'var(--muted)', fontWeight: 700 }}>0{idx + 1}</td>
+                      <td>
+                        <strong style={{ color: 'var(--ink)' }}>Kelas {cls.name}</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block' }}>Tingkat {cls.level}</span>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                          {classEntries.length} / {totalReq || '—'} JP
+                        </span>
+                      </td>
+                      <td>
+                        {isComplete ? (
+                          <span className="tag good">Lengkap</span>
+                        ) : totalReq === 0 ? (
+                          <span className="tag warn">Belum Ada Kebutuhan</span>
+                        ) : (
+                          <span className="tag warn">Perlu Cek</span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          className="button-quiet"
+                          style={{ height: '28px', padding: '0 8px', fontSize: '11.5px' }}
+                          onClick={() => onNavigate('schedule')}
+                        >
+                          Buka Jadwal &rarr;
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Right: Langkah Berikutnya (Dark Panel - Plate 01) */}
+        <div className="panel dark">
+          <div className="panel-head">
+            <div className="panel-title" style={{ color: '#fff' }}>Langkah Berikutnya</div>
+            <span className="badge-num">02</span>
+          </div>
+
+          <div className="mini-list" style={{ marginTop: '10px' }}>
+            <div className="listitem" style={{ background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              <span className="bullet" style={{ background: 'var(--emerald)' }}></span>
+              <div style={{ flex: 1 }}>
+                <b style={{ color: '#fff' }}>Lengkapi alokasi</b>
+                <small style={{ color: '#a8beb2' }}>
+                  {state.classes.filter(c => c.isActive && !state.requirements.some(r => r.classId === c.id)).length > 0
+                    ? `${state.classes.filter(c => c.isActive && !state.requirements.some(r => r.classId === c.id)).length} rombel belum teralokasi`
+                    : 'Target alokasi KBM tercatat'}
+                </small>
+              </div>
+            </div>
+
+            <div className="listitem" style={{ background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              <span className="bullet" style={{ background: 'var(--gold)' }}></span>
+              <div style={{ flex: 1 }}>
+                <b style={{ color: '#fff' }}>Periksa validasi</b>
+                <small style={{ color: '#a8beb2' }}>
+                  {totalErrors === 0 ? 'Semua aturan wajib terpenuhi' : `${totalErrors} catatan perlu diperiksa`}
+                </small>
+              </div>
+            </div>
+
+            <div className="listitem" style={{ background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              <span className="bullet" style={{ background: 'var(--jade)' }}></span>
+              <div style={{ flex: 1 }}>
+                <b style={{ color: '#fff' }}>Terbitkan jadwal</b>
+                <small style={{ color: '#a8beb2' }}>Setelah pemeriksaan selesai &amp; ekspor PDF</small>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn gold"
+              style={{ width: '100%', justifyContent: 'center' }}
+              onClick={() => onNavigate('generator')}
+            >
+              Buka Generator &rarr;
+            </button>
+            <button
+              type="button"
+              className="btn"
+              style={{ width: '100%', justifyContent: 'center', background: 'rgba(255,255,255,0.1)', borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
+              onClick={() => onNavigate('validation')}
+            >
+              Tinjau Validasi &amp; Konflik
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[...masterIssues, ...report.issues]
-              .filter((i) => i.severity === 'error')
-              .slice(0, 3)
-              .map((issue) => (
-                <div
-                  key={issue.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: '#fdf3f2',
-                    border: '1px solid #f9d8d3',
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <XCircle size={16} color="#b24c3d" />
-                    <div>
-                      <strong style={{ fontSize: '12px', color: '#173637' }}>{issue.title}</strong>
-                      <span style={{ fontSize: '11px', color: '#7a8a86', marginLeft: '6px' }}>{issue.message}</span>
-                    </div>
-                  </div>
-                  <button
-                    className="button button-quiet"
-                    style={{ fontSize: '10px', height: '26px' }}
-                    onClick={() => {
-                      if (issue.code.includes('COLLISION') || issue.code.includes('SLOT')) {
-                        onNavigate('schedule');
-                      } else {
-                        onNavigate('requirements');
-                      }
-                    }}
-                  >
-                    Perbaiki
-                  </button>
-                </div>
-              ))}
-          </div>
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -1493,7 +1747,10 @@ function ScheduleScreen({
 
   const hasEntries = !!(state.draft?.length || state.activeSchedule?.length);
   const activeDays = state.settings.activeDays;
-  const periods = Array.from({ length: state.settings.teachingPeriodsPerDay }, (_, i) => i + 1);
+  const timelineRows = useMemo(
+    () => getTimelineRows(state.slots, state.settings.teachingPeriodsPerDay),
+    [state.slots, state.settings.teachingPeriodsPerDay],
+  );
   const published = !state.draft && !!state.activeSchedule?.length;
   const activeClasses = useMemo(() => state.classes.filter((c) => c.isActive), [state.classes]);
   const activeTeachers = useMemo(() => state.teachers.filter((t) => t.isActive), [state.teachers]);
@@ -1533,11 +1790,8 @@ function ScheduleScreen({
                 Urungkan
               </Button>
             )}
-            <Button variant="secondary" icon={Clock} onClick={() => onNavigate('settings')} title="Atur durasi JP, jam mulai-selesai, dan kategori KBM/Istirahat">
-              Jam KBM &amp; Durasi JP
-            </Button>
             <Button variant="secondary" icon={Download} onClick={onOpenPdfModal}>
-              Ekspor PDF (A4)
+              Ekspor PDF
             </Button>
             <Button variant="secondary" icon={FileSpreadsheet} onClick={onExportCSV}>
               CSV
@@ -1631,82 +1885,7 @@ function ScheduleScreen({
       {/* MODE 1: MATRIKS SELURUH KELAS TERPADU (MASTER TIMETABLE VIEW)             */}
       {/* ========================================================================= */}
       {viewMode === 'all' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {/* Quick Metrics Bar Across All Classes */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: '12px',
-            }}
-          >
-            <div className="surface-card" style={{ padding: '12px 16px' }}>
-              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
-                TOTAL KELAS AKTIF
-              </span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
-                <strong style={{ fontSize: '20px', color: '#173637' }}>{activeClasses.length}</strong>
-                <span style={{ fontSize: '11px', color: '#687a75' }}>Rombel Belajar</span>
-              </div>
-            </div>
-
-            <div className="surface-card" style={{ padding: '12px 16px' }}>
-              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
-                SUSUNAN KELOMPOK
-              </span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
-                <strong style={{ fontSize: '20px', color: '#173637' }}>{rombelRows.length}</strong>
-                <span style={{ fontSize: '11px', color: '#687a75' }}>Kelompok Baris (A, B, ...)</span>
-              </div>
-            </div>
-
-            <div className="surface-card" style={{ padding: '12px 16px' }}>
-              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
-                ALOKASI KBM TERJADWAL
-              </span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
-                <strong style={{ fontSize: '20px', color: '#1f6952' }}>{totalAllocatedJp}</strong>
-                <span style={{ fontSize: '11px', color: '#687a75' }}>
-                  / {targetRequiredJp > 0 ? targetRequiredJp : totalAllocatedJp} JP ({totalAstroHours} Jam Efektif)
-                </span>
-              </div>
-            </div>
-
-            <div className="surface-card" style={{ padding: '12px 16px' }}>
-              <span style={{ fontSize: '10.5px', color: '#55726b', fontWeight: 700, letterSpacing: '0.04em' }}>
-                KUALITAS DISTRIBUSI
-              </span>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
-                <strong
-                  style={{
-                    fontSize: '20px',
-                    color: report.valid ? '#1f6952' : '#b24c3d',
-                  }}
-                >
-                  {report.valid ? '100% Bebas Bentrok' : `${report.hardErrorCount} Konflik`}
-                </strong>
-              </div>
-            </div>
-
-            <div
-              className="surface-card"
-              style={{ padding: '12px 16px', cursor: 'pointer', background: '#f6faf8' }}
-              onClick={() => onNavigate('settings')}
-              title="Klik untuk mengatur durasi JP dan jam KBM/istirahat"
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '10.5px', color: '#24635e', fontWeight: 800, letterSpacing: '0.04em' }}>
-                  DURASI 1 JP
-                </span>
-                <Clock size={13} color="#24635e" />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
-                <strong style={{ fontSize: '20px', color: '#24635e' }}>{periodMinutes}</strong>
-                <span style={{ fontSize: '11px', color: '#687a75' }}>Menit / JP · Atur &rarr;</span>
-              </div>
-            </div>
-          </div>
-
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {/* Master Timetable Toolbar with Filtering, Zoom, & View Controls */}
           <div className="matrix-controls-bar">
             {/* Filter controls */}
@@ -1857,17 +2036,16 @@ function ScheduleScreen({
                 </button>
               </div>
 
-              {/* Direct PDF Export Trigger */}
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={onOpenPdfModal}
-                style={{ height: '32px', fontSize: '11.5px', gap: '6px' }}
-                title="Cetak matriks atau jadwal kelas dalam format A4 / F4 resmi"
-              >
-                <Download size={14} />
-                <span>Cetak PDF (A4 / F4)</span>
-              </button>
+              {/* Timetable Live Status Pill */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '5px 12px', background: '#eef6f3', borderRadius: '8px', fontSize: '11.5px', color: '#16483f', fontWeight: 700 }}>
+                <span>{activeClasses.length} Rombel</span>
+                <span style={{ opacity: 0.35 }}>•</span>
+                <span>{totalAllocatedJp} / {targetRequiredJp > 0 ? targetRequiredJp : totalAllocatedJp} JP ({totalAstroHours} Jam)</span>
+                <span style={{ opacity: 0.35 }}>•</span>
+                <span style={{ color: report.valid ? '#166534' : '#991b1b' }}>
+                  {report.valid ? 'Bebas Bentrok' : `${report.hardErrorCount} Konflik`}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1960,12 +2138,45 @@ function ScheduleScreen({
                               </tr>
                             </thead>
                             <tbody>
-                              {periods.map((jpNo) => {
-                                const refSlot = state.slots.find(
-                                  (s) => s.kind === 'TEACHING' && s.jpNo === jpNo,
-                                );
-                                const timeStr = refSlot ? `${refSlot.start}-${refSlot.end}` : `JP ${jpNo}`;
+                              {timelineRows.map((tRow) => {
+                                const timeStr = `${tRow.start}-${tRow.end}`;
+                                if (!tRow.isKbm) {
+                                  return (
+                                    <tr key={`agenda-${tRow.order}`}>
+                                      <th className="jp-row-header" style={{ background: '#eef5f1' }}>
+                                        <strong style={{ color: '#103f3e', fontSize: '9.5px' }}>{tRow.defaultLabel}</strong>
+                                        <small style={{ color: '#2d6b5e' }}>{timeStr}</small>
+                                      </th>
+                                      {activeDays.map((day) => {
+                                        const slotDef = state.slots.find(
+                                          (s) => s.day === day && s.order === tRow.order,
+                                        );
+                                        const actType = (slotDef?.activityType || tRow.activityType || '').toLowerCase();
+                                        const actClass = actType.includes('upacara')
+                                          ? 'upacara'
+                                          : actType.includes('religi') || actType.includes('sholat')
+                                          ? 'religi'
+                                          : actType.includes('istirahat')
+                                          ? 'istirahat'
+                                          : 'lainnya';
+                                        const label = slotDef?.activityName || slotDef?.label || tRow.defaultLabel;
+                                        return (
+                                          <td key={day}>
+                                            <div
+                                              className={`master-non-kbm-slot ${actClass}`}
+                                              title={`${label} (${day}, ${timeStr} WIB): Non-KBM / Terkunci`}
+                                            >
+                                              <LockKeyhole size={10} style={{ display: 'inline', marginRight: 3, verticalAlign: -1 }} />
+                                              {label}
+                                            </div>
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  );
+                                }
 
+                                const jpNo = tRow.jpNo!;
                                 return (
                                   <tr key={jpNo}>
                                     <th className="jp-row-header">
@@ -1984,7 +2195,8 @@ function ScheduleScreen({
                                         draggedSlot?.classId === cls.id;
 
                                       if (blocked) {
-                                        const actType = (slotDef?.activityType || 'ISTIRAHAT').toLowerCase();
+                                        const isOutOfKbm = !slotDef;
+                                        const actType = (slotDef?.activityType || '').toLowerCase();
                                         const actClass = actType.includes('upacara')
                                           ? 'upacara'
                                           : actType.includes('religi') || actType.includes('sholat')
@@ -1997,9 +2209,10 @@ function ScheduleScreen({
                                           <td key={day}>
                                             <div
                                               className={`master-non-kbm-slot ${actClass}`}
-                                              title={`${slotDef?.activityName || slotDef?.activityType || 'Non-KBM'} (${day}, JP ${jpNo})`}
+                                              style={isOutOfKbm ? { background: '#f5f7f6', color: '#889e96', border: '1px dashed #d0dcd6' } : undefined}
+                                              title={isOutOfKbm ? `Di Luar Jam KBM (${day}, JP ${jpNo})` : `${slotDef?.activityName || slotDef?.activityType} (${day}, ${slotDef?.start}-${slotDef?.end} WIB)`}
                                             >
-                                              {slotDef?.activityName || slotDef?.activityType || 'ISTIRAHAT'}
+                                              {isOutOfKbm ? 'Selesai KBM' : (slotDef?.activityName || slotDef?.activityType || 'NON-KBM')}
                                             </div>
                                           </td>
                                         );
@@ -2041,7 +2254,7 @@ function ScheduleScreen({
                                               onClick={() => onEditSlot(cls.id, day, jpNo)}
                                               title={`Klik untuk mengisi jadwal Kelas ${cls.name} pada ${day}, JP ${jpNo}`}
                                             >
-                                              + Isi
+                                              <span>+ Isi</span>
                                             </button>
                                           </td>
                                         );
@@ -2204,6 +2417,19 @@ function ScheduleScreen({
                   </strong>
                 </div>
                 <div className="schedule-summary-metric">
+                  <span>Kepatuhan JP</span>
+                  {(() => {
+                    const filled = (state.draft ?? state.activeSchedule ?? []).filter((e) => e.classId === selectedClass).length;
+                    const target = state.requirements.filter((item) => item.classId === selectedClass).reduce((sum, item) => sum + item.requiredJP, 0);
+                    const diff = filled - target;
+                    return (
+                      <strong style={{ color: diff === 0 ? '#1f6952' : '#b24c3d' }}>
+                        {diff === 0 ? '100% Pas' : diff > 0 ? `+${diff} JP` : `${diff} JP`}
+                      </strong>
+                    );
+                  })()}
+                </div>
+                <div className="schedule-summary-metric">
                   <span>Hari Aktif</span>
                   <strong>{activeDays.length} <small>hari</small></strong>
                 </div>
@@ -2224,12 +2450,94 @@ function ScheduleScreen({
                     </tr>
                   </thead>
                   <tbody>
-                    {periods.map((jpNo) => (
+                    {timelineRows.map((tRow) => {
+                      if (!tRow.isKbm) {
+                        return (
+                          <tr key={`agenda-${tRow.order}`}>
+                            <th
+                              className="period-heading non-kbm-heading"
+                              title={`Non-KBM: ${tRow.defaultLabel} (${tRow.start} – ${tRow.end} WIB)`}
+                              style={{ background: '#edf4f0', borderRight: '2px solid #b8d5c8' }}
+                            >
+                              <span style={{ fontSize: '0.62rem', padding: '2px 5px', background: '#d5e9df', color: '#103f3e', borderRadius: '4px', fontWeight: 800 }}>NON-KBM</span>
+                              <small style={{ fontWeight: 700, color: '#1b564b', marginTop: '2px' }}>
+                                {tRow.start} – {tRow.end}
+                              </small>
+                            </th>
+                            {activeDays.map((day) => {
+                              const slotDef = state.slots.find((s) => s.day === day && s.order === tRow.order);
+                              const actType = (slotDef?.activityType || tRow.activityType || '').toUpperCase();
+                              const label = slotDef?.activityName || slotDef?.label || tRow.defaultLabel;
+                              const isUpacara = actType === 'UPACARA';
+                              const isReligi = actType === 'RELIGI';
+
+                              return (
+                                <td key={`${day}-${tRow.order}`} className="non-kbm-cell-wrap" style={{ background: '#f8faf9', padding: '5px' }}>
+                                  <div
+                                    className={`non-kbm-card ${isUpacara ? 'is-upacara' : isReligi ? 'is-religi' : 'is-istirahat'}`}
+                                    style={{
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      minHeight: '82px',
+                                      height: '100%',
+                                      borderRadius: '8px',
+                                      padding: '8px 6px',
+                                      textAlign: 'center',
+                                      userSelect: 'none',
+                                      cursor: 'not-allowed',
+                                      background: isUpacara
+                                        ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)'
+                                        : isReligi
+                                        ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)'
+                                        : 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                                      border: isUpacara
+                                        ? '1px solid #fde68a'
+                                        : isReligi
+                                        ? '1px solid #bbf7d0'
+                                        : '1px solid #e2e8f0',
+                                      color: isUpacara
+                                        ? '#92400e'
+                                        : isReligi
+                                        ? '#166534'
+                                        : '#475569',
+                                    }}
+                                    title={`${label} (${day}, ${slotDef?.start || tRow.start}–${slotDef?.end || tRow.end} WIB): Terkunci Permanen / Non-KBM. Tidak dapat diisi mapel.`}
+                                  >
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 800, fontSize: '0.78rem' }}>
+                                      <LockKeyhole size={12} style={{ opacity: 0.85 }} />
+                                      <span>{label}</span>
+                                    </div>
+                                    <small style={{ fontSize: '0.68rem', opacity: 0.85, marginTop: '3px', fontWeight: 600 }}>
+                                      {isUpacara
+                                        ? 'Upacara & Apel Pagi'
+                                        : isReligi
+                                        ? (day === 'Jumat' ? 'Jumat Bersih & Religi' : 'Tadarus & Sholat Dhuha')
+                                        : (tRow.order === 5 ? 'Rehat Pagi Santri' : 'Sholat Dhuhur & Ishoma')}
+                                    </small>
+                                    <span style={{ fontSize: '0.64rem', fontWeight: 700, opacity: 0.75, marginTop: '2px' }}>
+                                      {slotDef?.start || tRow.start} – {slotDef?.end || tRow.end} WIB
+                                    </span>
+                                    <span style={{ fontSize: '0.58rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', background: 'rgba(0,0,0,0.05)', padding: '1px 5px', borderRadius: '3px', marginTop: '4px' }}>
+                                      Terkunci
+                                    </span>
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      }
+
+                      const jpNo = tRow.jpNo!;
+                      const refSlot = state.slots.find((slot) => slot.kind === 'TEACHING' && slot.active && slot.jpNo === jpNo);
+                      return (
                       <tr key={jpNo}>
-                        <th className="period-heading">
+                        <th className="period-heading" title={`Jam KBM JP ${jpNo}: ${refSlot ? `${refSlot.start} – ${refSlot.end} WIB` : '—'}`}>
                           <span>JP {String(jpNo).padStart(2, '0')}</span>
-                          <small>
-                            {state.slots.find((slot) => slot.kind === 'TEACHING' && slot.day === activeDays[0] && slot.jpNo === jpNo)?.start ?? '—'}
+                          <small style={{ fontWeight: 700, color: '#16483f' }}>
+                            {refSlot ? `${refSlot.start} – ${refSlot.end}` : '—'}
                           </small>
                         </th>
                         {activeDays.map((day) => {
@@ -2242,10 +2550,12 @@ function ScheduleScreen({
                           const blocked = isSlotBlocked(slotDef);
                           const isOver = dragOverTarget?.day === day && dragOverTarget?.jpNo === jpNo;
 
+                          const isOutOfKbm = !slotDef;
                           return (
                             <td
                               key={`${day}-${jpNo}`}
                               onDragOver={(e) => {
+                                if (blocked) return;
                                 e.preventDefault();
                                 setDragOverTarget({ day, jpNo });
                               }}
@@ -2257,46 +2567,68 @@ function ScheduleScreen({
                               onDrop={(e) => {
                                 e.preventDefault();
                                 setDragOverTarget(null);
+                                if (blocked) return;
                                 if (draggedSlot) {
                                   onDropSlot(draggedSlot, { day, jpNo });
                                   setDraggedSlot(null);
                                 }
                               }}
                               style={{
-                                background: isOver ? 'rgba(36, 99, 94, 0.12)' : undefined,
-                                outline: isOver ? '2px dashed #24635e' : undefined,
+                                background: isOver && !blocked ? 'rgba(36, 99, 94, 0.12)' : undefined,
+                                outline: isOver && !blocked ? '2px dashed #24635e' : undefined,
                               }}
                             >
                               <button
-                                draggable={!!entry}
+                                type="button"
+                                disabled={blocked}
+                                draggable={!blocked && !!entry}
                                 onDragStart={() => {
-                                  if (entry) {
+                                  if (entry && !blocked) {
                                     setDraggedSlot({ classId: selectedClass, day, jpNo });
                                   }
                                 }}
                                 className={`schedule-cell ${entry ? 'has-entry' : 'is-empty'} ${blocked ? 'is-blocked' : ''}`}
-                                style={entry && subject ? ({ '--subject-color': subject.color } as React.CSSProperties) : undefined}
-                                onClick={() => onEditSlot(selectedClass, day, jpNo)}
+                                style={{
+                                  ...(entry && subject ? ({ '--subject-color': subject.color } as React.CSSProperties) : {}),
+                                  cursor: blocked ? 'not-allowed' : undefined,
+                                }}
+                                onClick={() => {
+                                  if (!blocked) {
+                                    onEditSlot(selectedClass, day, jpNo);
+                                  }
+                                }}
                                 title={
                                   blocked
-                                    ? 'Slot diblokir untuk kegiatan non-KBM'
+                                    ? (isOutOfKbm ? `Di luar jam KBM ${day}` : `${slotDef?.activityName || slotDef?.activityType || 'Non-KBM'} (${slotDef?.start}–${slotDef?.end} WIB): Terkunci`)
                                     : entry
-                                    ? `Tarik untuk memindahkan: ${subject?.name} (${teacher?.name})`
-                                    : `Klik untuk menambah pelajaran pada ${day}, JP ${jpNo}`
+                                    ? `Tarik untuk memindahkan: ${subject?.name} (${teacher?.name}) · Jam KBM ${slotDef?.start}–${slotDef?.end}`
+                                    : `Klik untuk menambah pelajaran pada ${day}, JP ${jpNo} (${slotDef?.start}–${slotDef?.end} WIB)`
                                 }
                               >
-                                <span className="cell-time">{entry ? subject?.code ?? 'MAPEL' : blocked ? 'BLOCKED' : '+ ADD'}</span>
+                                <span className="cell-time">
+                                  {entry
+                                    ? `${subject?.code ?? 'MAPEL'} · ${slotDef?.start ?? ''}`
+                                    : blocked
+                                    ? (isOutOfKbm ? 'SELESAI' : (slotDef?.activityName || slotDef?.activityType || 'NON-KBM'))
+                                    : `JP ${jpNo} (${slotDef?.start ?? ''})`}
+                                </span>
                                 {entry ? (
                                   <>
                                     <strong>{subject?.name ?? 'Mapel'}</strong>
                                     <small>{teacher?.name ?? 'Guru belum tersedia'}</small>
                                     <span className="cell-foot">
-                                      <i /> {teacher?.code ?? '—'}
+                                      <i /> {teacher?.code ?? '—'} <span style={{ opacity: 0.75, marginLeft: 'auto' }}>{slotDef?.start}–{slotDef?.end}</span>
                                     </span>
                                   </>
                                 ) : (
                                   <span className="empty-cell-hint">
-                                    {blocked ? 'Kegiatan Terjadwal' : 'Tambah pelajaran'}
+                                    {blocked ? (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                        <LockKeyhole size={11} /> {isOutOfKbm ? 'Di Luar Jam KBM' : (slotDef?.activityName || slotDef?.activityType)}
+                                      </span>
+                                    ) : (
+                                      <span>+ Isi Mapel ({slotDef?.start ?? ''})</span>
+                                    )}
                                   </span>
                                 )}
                               </button>
@@ -2304,7 +2636,8 @@ function ScheduleScreen({
                           );
                         })}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2312,6 +2645,7 @@ function ScheduleScreen({
               <div className="schedule-legend-row">
                 <span><i className="legend-dot dot-teal" /> Mapel terisi (Dapat digeser/drag)</span>
                 <span><i className="legend-dot dot-ivory" /> Slot KBM kosong</span>
+                <span><LockKeyhole size={13} style={{ verticalAlign: -2, color: '#16483f' }} /> Slot Non-KBM (Upacara, Religi, Istirahat: Terkunci)</span>
                 <span><ShieldCheck size={14} /> Klik untuk edit manual</span>
                 <span className="legend-spacer" />
                 <button className="text-link" onClick={onOpenValidationModal}>
@@ -2572,7 +2906,61 @@ function SettingsScreen({
       </div>
 
       {activeTab === 'time' && (
-        <div className="settings-layout">
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+              marginBottom: '16px',
+            }}
+          >
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                HARI BELAJAR AKTIF
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#173637', fontWeight: 800 }}>{activeDays.length} Hari</strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>/ Pekan KBM</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                TOTAL JP KBM PEKANAN
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#1f6952', fontWeight: 800 }}>
+                  {state.settings.activeDays.reduce((sum, day) => sum + teachingPeriodsForDay(state.slots, day).length, 0)} JP
+                </strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Jam KBM Efektif</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                DURASI STANDAR 1 JP
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#bc945e', fontWeight: 800 }}>{periodMinutes} Menit</strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Standar MTs</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                WAKTU ASTRONOMIS NYATA
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#2c678a', fontWeight: 800 }}>
+                  {((state.settings.activeDays.reduce((sum, day) => sum + teachingPeriodsForDay(state.slots, day).length, 0) * Number(periodMinutes || 40)) / 60).toFixed(1)} Jam
+                </strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Tatap Muka / Pekan</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="settings-layout">
           <div className="settings-main-column">
             {/* 1. Active Days (Senin, Selasa, Rabu, Kamis, Jumat, Sabtu) */}
             <Card eyebrow="ACTIVE SCHOOL DAYS" title="Hari KBM Aktif (Senin — Sabtu)">
@@ -2606,8 +2994,7 @@ function SettingsScreen({
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    className="button button-quiet"
-                    style={{ fontSize: '11px', height: '32px' }}
+                    className="button button-sm button-quiet"
                     onClick={() => {
                       setDefinitions(createDefaultPeriodDefinitions(8, [2, 5], Number(periodMinutes) || 40));
                     }}
@@ -2617,8 +3004,7 @@ function SettingsScreen({
                   </button>
                   <button
                     type="button"
-                    className="button button-quiet"
-                    style={{ fontSize: '11px', height: '32px' }}
+                    className="button button-sm button-quiet"
                     onClick={() => {
                       const dur = Number(periodMinutes) || 40;
                       let cursor = 7 * 60; // 07:00
@@ -2645,16 +3031,14 @@ function SettingsScreen({
                   </button>
                   <button
                     type="button"
-                    className="button button-secondary"
-                    style={{ fontSize: '11px', height: '32px' }}
+                    className="button button-sm button-secondary"
                     onClick={() => handleAddSlot('ISTIRAHAT', 20, 'Istirahat')}
                   >
                     <Plus size={14} /> Sisipkan Istirahat
                   </button>
                   <button
                     type="button"
-                    className="button button-secondary"
-                    style={{ fontSize: '11px', height: '32px' }}
+                    className="button button-sm button-secondary"
                     onClick={() => handleAddSlot('KBM')}
                   >
                     <Plus size={14} /> Tambah Jam KBM
@@ -2954,13 +3338,13 @@ function SettingsScreen({
                 </table>
               </div>
 
-              <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <span style={{ fontSize: '11px', color: '#556663' }}>
+              <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', padding: '10px 14px', background: '#f5faf7', borderRadius: '8px', border: '1px solid #dce8e2' }}>
+                <span style={{ fontSize: '12px', color: '#16483f' }}>
                   <strong>{definitions.filter((d) => d.activityType === 'KBM').length} Jam Pelajaran (KBM)</strong> · {definitions.filter((d) => d.activityType !== 'KBM').length} Jam Non-KBM Terjadwal · Rentang {definitions[0]?.start ?? '07:00'} sampai {definitions[definitions.length - 1]?.end ?? '13:00'} ({Number(periodMinutes) || 40} Menit/JP)
                 </span>
-                <button className="button button-primary" onClick={handleSave}>
-                  <Save size={15} /> Simpan Pengaturan Jam &amp; Durasi JP
-                </button>
+                <span style={{ fontSize: '11.5px', color: '#556663' }}>
+                  Gunakan tombol <strong>Simpan Pengaturan</strong> di bagian atas untuk menyimpan seluruh perubahan.
+                </span>
               </div>
             </Card>
 
@@ -3203,6 +3587,7 @@ function SettingsScreen({
             </div>
           </aside>
         </div>
+        </>
       )}
 
       {activeTab === 'general' && (
@@ -3670,6 +4055,40 @@ function GeneratorScreen({
         }
       />
 
+      {/* Solver & Capacity KPI Metrics */}
+      <div className="generator-metrics">
+        <div>
+          <span>TARGET ALOKASI JP</span>
+          <strong>{allJP} JP</strong>
+          <small>{state.requirements.length} Mata Pelajaran Siswa</small>
+        </div>
+        <div>
+          <span>KAPASITAS SLOT MURNI</span>
+          <strong>
+            {state.settings.activeDays.reduce((sum, day) => sum + teachingPeriodsForDay(state.slots, day).length, 0) *
+              state.classes.filter((c) => c.isActive).length}{' '}
+            JP
+          </strong>
+          <small>{state.classes.filter((c) => c.isActive).length} Rombel KBM Terdaftar</small>
+        </div>
+        <div>
+          <span>KANDIDAT TERSIMPAN</span>
+          <strong>{state.candidates.length}</strong>
+          <small>Variasi Solusi Teruji</small>
+        </div>
+        <div>
+          <span>STATUS SOLVER</span>
+          <strong
+            style={{
+              color: isGenerating ? '#1f6850' : result?.status === 'SUCCESS' ? '#1f6850' : '#876123',
+            }}
+          >
+            {isGenerating ? 'Mencari...' : result?.status === 'SUCCESS' ? '100% Lolos' : result ? statuses[result.status].label : 'Siap Dijalankan'}
+          </strong>
+          <small>Constraint Engine Deterministik</small>
+        </div>
+      </div>
+
       <div className="dashboard-grid generator-main-grid">
         <Card eyebrow="CONSTRAINT SEARCH" title="Hasil Penyusunan Jadwal">
           <div className="result-status-top">
@@ -3785,35 +4204,22 @@ function MasterScreen({
   onOpenAddModal?: (kind: 'class' | 'teacher' | 'subject') => void;
   onNavigate?: (screen: ScreenId) => void;
 }) {
+    const [pageSize, setPageSize] = useState<number>(10);
+  const [page, setPage] = useState<number>(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search]);
+
   const filteredClasses = state.classes.filter((item) => `${item.name} ${item.level}`.toLowerCase().includes(search.toLowerCase()));
   const filteredTeachers = state.teachers.filter((item) => `${item.name} ${item.code}`.toLowerCase().includes(search.toLowerCase()));
   const filteredSubjects = state.subjects.filter((item) => `${item.name} ${item.code}`.toLowerCase().includes(search.toLowerCase()));
 
+  const currentList = activeTab === 'classes' ? filteredClasses : activeTab === 'teachers' ? filteredTeachers : filteredSubjects;
+  const paginatedList = pageSize === 0 ? currentList : currentList.slice((page - 1) * pageSize, page * pageSize);
+
   return (
     <>
-      {/* Consolidated Academic Hub Switcher */}
-      {onNavigate && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-          <button className="button button-primary" style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}>
-            Data Master (Kelas, Guru, Mapel)
-          </button>
-          <button
-            className="button button-secondary"
-            onClick={() => onNavigate('requirements')}
-            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
-          >
-            Alokasi Kebutuhan JP
-          </button>
-          <button
-            className="button button-secondary"
-            onClick={() => onNavigate('workload')}
-            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
-          >
-            Analisis Beban Guru
-          </button>
-        </div>
-      )}
-
       <PageHeading
         kicker="DATA MASTER REPOSITORY"
         title="Data Master Madrasah"
@@ -3831,6 +4237,69 @@ function MasterScreen({
           </Button>
         }
       />
+
+      {/* Real-Time Master Data KPI Strip */}
+      <div className="master-summary-strip">
+        <div className="master-summary-item">
+          <div className="master-summary-icon">
+            <GraduationCap size={19} />
+          </div>
+          <div>
+            <span>TOTAL ROMBEL</span>
+            <strong>{state.classes.filter((c) => c.isActive).length}</strong>
+            <small>{state.classes.length} Rombel Terdaftar</small>
+          </div>
+        </div>
+
+        <div className="master-summary-item">
+          <div className="master-summary-icon gold">
+            <Users size={19} />
+          </div>
+          <div>
+            <span>DEWAN GURU</span>
+            <strong>{state.teachers.filter((t) => t.isActive).length}</strong>
+            <small>Pendidik Aktif Mengampu</small>
+          </div>
+        </div>
+
+        <div className="master-summary-item">
+          <div className="master-summary-icon blue">
+            <BookOpen size={19} />
+          </div>
+          <div>
+            <span>MATA PELAJARAN</span>
+            <strong>{state.subjects.filter((s) => s.isActive).length}</strong>
+            <small>Kurikulum MTs Terdata</small>
+          </div>
+        </div>
+
+        <div className="master-summary-item">
+          <div
+            className="master-summary-icon"
+            style={{
+              color: state.classes.length > 0 && state.teachers.length > 0 && state.subjects.length > 0 ? '#1f6850' : '#b24c3d',
+              background: state.classes.length > 0 && state.teachers.length > 0 && state.subjects.length > 0 ? '#e7efe5' : '#fee4e2',
+            }}
+          >
+            <ShieldCheck size={19} />
+          </div>
+          <div>
+            <span>INTEGRITAS DATA</span>
+            <strong
+              style={{
+                color: state.classes.length > 0 && state.teachers.length > 0 && state.subjects.length > 0 ? '#1f6850' : '#b24c3d',
+              }}
+            >
+              {state.classes.length > 0 && state.teachers.length > 0 && state.subjects.length > 0 ? '100% Siap' : 'Perlu Input'}
+            </strong>
+            <small>
+              {state.classes.length > 0 && state.teachers.length > 0 && state.subjects.length > 0
+                ? 'Struktur Master Lengkap'
+                : 'Data Inti Belum Lengkap'}
+            </small>
+          </div>
+        </div>
+      </div>
 
       <Card title="Master Records" eyebrow="DATA GOVERNANCE" action={
         <div className="table-toolbar">
@@ -3881,6 +4350,7 @@ function MasterScreen({
                 </div>
               )}
             </div>
+
             {addType === 'teacher' && (
               <>
                 <div className="form-grid-two">
@@ -3973,7 +4443,7 @@ function MasterScreen({
                 </tr>
               </thead>
               <tbody>
-                {filteredClasses.map((c) => {
+                {(paginatedList as SchoolClass[]).map((c) => {
                   const reqs = state.requirements.filter((r) => r.classId === c.id);
                   const total = reqs.reduce((sum, r) => sum + r.requiredJP, 0);
                   return (
@@ -4024,7 +4494,7 @@ function MasterScreen({
                 </tr>
               </thead>
               <tbody>
-                {filteredTeachers.map((t) => {
+                {(paginatedList as Teacher[]).map((t) => {
                   const teacherReqs = state.requirements.filter((r) => r.teacherId === t.id);
                   const totalAssignedJP = teacherReqs.reduce((sum, r) => sum + r.requiredJP, 0);
                   const maxJP = t.maxWeeklyJP || 24;
@@ -4129,7 +4599,7 @@ function MasterScreen({
                 </tr>
               </thead>
               <tbody>
-                {filteredSubjects.map((s) => {
+                {(paginatedList as Subject[]).map((s) => {
                   const teachers = state.teachers.filter((t) => t.isActive && t.subjectIds.includes(s.id));
                   return (
                     <tr key={s.id}>
@@ -4165,6 +4635,13 @@ function MasterScreen({
             </table>
           </div>
         )}
+              <TablePagination
+          totalItems={currentList.length}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </Card>
     </>
   );
@@ -4203,7 +4680,12 @@ function RequirementsScreen({
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
   const [onlyIssuesFilter, setOnlyIssuesFilter] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [validationExpanded, setValidationExpanded] = useState<boolean>(true);
+  const [reqPageSize, setReqPageSize] = useState<number>(10);
+  const [reqPage, setReqPage] = useState<number>(1);
+
+  useEffect(() => {
+    setReqPage(1);
+  }, [selectedClassFilter, onlyIssuesFilter, searchQuery]);
 
   // 1. Calculate Total Weekly Slots per Class
   const totalWeeklySlots = useMemo(() => {
@@ -4313,29 +4795,6 @@ function RequirementsScreen({
 
   return (
     <>
-      {/* Consolidated Academic Hub Switcher */}
-      {_onNavigate && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-          <button
-            className="button button-secondary"
-            onClick={() => _onNavigate('master')}
-            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
-          >
-            Data Master (Kelas, Guru, Mapel)
-          </button>
-          <button className="button button-primary" style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}>
-            Alokasi Kebutuhan JP
-          </button>
-          <button
-            className="button button-secondary"
-            onClick={() => _onNavigate('workload')}
-            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
-          >
-            Analisis Beban Guru
-          </button>
-        </div>
-      )}
-
       <PageHeading
         kicker="CURRICULUM PLANNING & MASTER VALIDATION"
         title="Kebutuhan &amp; Alokasi JP"
@@ -4359,270 +4818,82 @@ function RequirementsScreen({
         }
       />
 
-      {/* 1. REAL-TIME DATA MASTER VALIDATION HUB */}
-      {liveIssues.length > 0 ? (
-        <div
-          style={{
-            background: criticalIssues.length > 0 ? '#fff8f7' : '#fffcf5',
-            border: `1.5px solid ${criticalIssues.length > 0 ? '#f5c6cb' : '#faebcc'}`,
-            borderRadius: '12px',
-            padding: '16px 18px',
-            marginBottom: '16px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  background: criticalIssues.length > 0 ? '#fde8e8' : '#fef3c7',
-                  color: criticalIssues.length > 0 ? '#c81e1e' : '#b45309',
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
-                <AlertTriangle size={18} />
-              </div>
-              <div>
-                <strong style={{ fontSize: '13.5px', color: '#173637', display: 'block' }}>
-                  Validasi Real-Time Data Master: {criticalIssues.length} Isu Kritis &amp; {warningIssues.length} Peringatan
-                </strong>
-                <span style={{ fontSize: '11px', color: '#556663' }}>
-                  Perubahan alokasi langsung divalidasi dengan aturan kapasitas kelas dan beban maksimum guru tanpa perlu berpindah layar.
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                className="button button-secondary"
-                onClick={() => setOnlyIssuesFilter(!onlyIssuesFilter)}
-                style={{
-                  fontSize: '11.5px',
-                  height: '32px',
-                  background: onlyIssuesFilter ? '#173637' : '#ffffff',
-                  color: onlyIssuesFilter ? '#ffffff' : '#173637',
-                }}
-              >
-                {onlyIssuesFilter ? 'Tampilkan Semua Alokasi' : 'Fokuskan Isu Alokasi'}
-              </button>
-              <button
-                className="icon-button"
-                onClick={() => setValidationExpanded(!validationExpanded)}
-                title={validationExpanded ? 'Sembunyikan rincian isu' : 'Tampilkan rincian isu'}
-                style={{ height: '32px', width: '32px' }}
-              >
-                <ChevronDown size={16} style={{ transform: validationExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-              </button>
-            </div>
+      {/* Real-Time Requirements & Capacity KPI Grid */}
+      <div className="requirements-metric-grid">
+        <div className="req-metric">
+          <div className="req-metric-mark">
+            <BookOpen size={18} />
           </div>
-
-          {validationExpanded && (
-            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {liveIssues.slice(0, 5).map((issue) => {
-                const isError = issue.severity === 'error';
-                return (
-                  <div
-                    key={issue.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      background: '#ffffff',
-                      border: `1px solid ${isError ? '#f8d0c8' : '#faebcc'}`,
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      fontSize: '11.5px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: 800,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          background: isError ? '#fde8e8' : '#fef3c7',
-                          color: isError ? '#9b1c1c' : '#92400e',
-                        }}
-                      >
-                        {isError ? 'KRITIS' : 'PERINGATAN'}
-                      </span>
-                      <strong style={{ color: '#173637' }}>{issue.title}:</strong>
-                      <span style={{ color: '#556663' }}>{issue.message}</span>
-                    </div>
-
-                    {/* Interactive Context Action */}
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {issue.code === 'DATA-TEACHER-LOAD-OVER' && (
-                        <button
-                          className="button button-quiet"
-                          style={{ fontSize: '10.5px', height: '26px' }}
-                          onClick={() => {
-                            const tch = state.teachers.find((t) => issue.message.includes(t.name));
-                            if (tch) setSearchQuery(tch.name);
-                          }}
-                        >
-                          Tinjau Alokasi Guru
-                        </button>
-                      )}
-                      {(issue.code === 'DATA-CLASS-DEMAND-CAPACITY' || issue.code === 'DATA-CLASS-NO-DEMAND') && (
-                        <button
-                          className="button button-quiet"
-                          style={{ fontSize: '10.5px', height: '26px' }}
-                          onClick={() => {
-                            const cls = state.classes.find((c) => issue.message.includes(c.name) || issue.title.includes(c.name));
-                            if (cls) setSelectedClassFilter(cls.id);
-                          }}
-                        >
-                          Fokuskan Kelas
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <span>TOTAL KEBUTUHAN</span>
+          <strong>{totalJP} JP</strong>
+          <small>{state.requirements.length} Alokasi Mapel Terdata</small>
         </div>
-      ) : (
-        <div
-          style={{
-            background: '#eef8f2',
-            border: '1.5px solid #b7e3ca',
-            borderRadius: '12px',
-            padding: '12px 18px',
-            marginBottom: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '10px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#d1fae5', color: '#065f46', display: 'grid', placeItems: 'center' }}>
-              <CheckCircle2 size={18} />
-            </div>
-            <div>
-              <strong style={{ fontSize: '13px', color: '#065f46', display: 'block' }}>
-                Data Master &amp; Alokasi 100% Selaras
-              </strong>
-              <span style={{ fontSize: '11px', color: '#16483f' }}>
-                Semua {classCapacityStats.length} kelas aktif telah memenuhi kapasitas {totalWeeklySlots} JP/minggu dan tidak ada guru yang melebihi batas beban.
-              </span>
-            </div>
+
+        <div className="req-metric">
+          <div className="req-metric-mark blue">
+            <Clock size={18} />
+          </div>
+          <span>KAPASITAS KBM</span>
+          <strong>{totalWeeklySlots * state.classes.filter((c) => c.isActive).length} JP</strong>
+          <small>{totalWeeklySlots} JP per Rombel / Pekan</small>
+        </div>
+
+        <div className="req-metric">
+          <div className="req-metric-mark amber">
+            <TrendingUp size={18} />
+          </div>
+          <span>KESEIMBANGAN ALOKASI</span>
+          <strong
+            style={{
+              color: totalJP === totalWeeklySlots * state.classes.filter((c) => c.isActive).length ? '#1f6850' : '#b24c3d',
+            }}
+          >
+            {totalJP === totalWeeklySlots * state.classes.filter((c) => c.isActive).length
+              ? '100% Pas'
+              : totalJP > totalWeeklySlots * state.classes.filter((c) => c.isActive).length
+              ? `Surplus +${totalJP - totalWeeklySlots * state.classes.filter((c) => c.isActive).length} JP`
+              : `Kurang ${totalWeeklySlots * state.classes.filter((c) => c.isActive).length - totalJP} JP`}
+          </strong>
+          <small>
+            {totalJP === totalWeeklySlots * state.classes.filter((c) => c.isActive).length
+              ? 'Seluruh slot KBM terisi pas'
+              : 'Perlu diselaraskan dengan JP KBM'}
+          </small>
+        </div>
+
+        <div className="req-metric">
+          <div className="req-metric-mark violet">
+            <CheckCircle2 size={18} />
+          </div>
+          <span>ROMBEL TUNTAS</span>
+          <strong>
+            {classCapacityStats.filter((c) => c.isExact).length} / {classCapacityStats.length}
+          </strong>
+          <small>
+            {classCapacityStats.filter((c) => !c.isExact).length === 0
+              ? 'Semua rombel tepat kapasitas'
+              : `${classCapacityStats.filter((c) => !c.isExact).length} rombel butuh penyesuaian`}
+          </small>
+        </div>
+      </div>
+
+      {/* Live Issue Context Notice (Calm & Compact) */}
+      {liveIssues.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#fefce8', border: '1px solid #fef08a', borderRadius: '10px', marginTop: '14px', fontSize: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#854d0e' }}>
+            <AlertTriangle size={15} />
+            <span>Terdeteksi <strong>{criticalIssues.length} isu kritis</strong> dan <strong>{warningIssues.length} peringatan</strong> alokasi JP.</span>
           </div>
           <button
-            className="button button-primary"
-            onClick={onGenerate}
-            style={{ fontSize: '11.5px', height: '32px' }}
+            type="button"
+            className="button button-quiet"
+            style={{ height: '28px', fontSize: '11.5px' }}
+            onClick={() => setOnlyIssuesFilter(!onlyIssuesFilter)}
           >
-            <WandSparkles size={14} /> Buat Jadwal Sekarang
+            {onlyIssuesFilter ? 'Tampilkan Semua Alokasi' : 'Saring Hanya Isu'}
           </button>
         </div>
       )}
-
-      {/* 2. REAL-TIME CLASS CAPACITY & DEMAND TRACKER (INTERACTIVE CHIPS) */}
-      <div style={{ marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          <span style={{ fontSize: '11px', fontWeight: 800, color: '#31544d', letterSpacing: '0.06em' }}>
-            MONITOR KAPASITAS KELAS ({totalWeeklySlots} JP/MINGGU PER KELAS)
-          </span>
-          {selectedClassFilter !== 'ALL' && (
-            <button
-              onClick={() => setSelectedClassFilter('ALL')}
-              style={{ border: 0, background: 'none', color: '#24635e', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}
-            >
-              ✕ Tampilkan Semua Kelas
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
-          <button
-            onClick={() => setSelectedClassFilter('ALL')}
-            style={{
-              padding: '10px 12px',
-              borderRadius: '10px',
-              border: `1.5px solid ${selectedClassFilter === 'ALL' ? '#24635e' : '#e0e7e3'}`,
-              background: selectedClassFilter === 'ALL' ? '#eaf4ee' : '#fffdf8',
-              textAlign: 'left',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '12.5px', color: '#173637' }}>Semua Kelas</strong>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#556663' }}>{state.requirements.length} Mapel</span>
-            </div>
-            <span style={{ fontSize: '11px', color: '#556663' }}>
-              Total {totalJP} JP dialokasikan
-            </span>
-          </button>
-
-          {classCapacityStats.map((c) => {
-            const isSelected = selectedClassFilter === c.cls.id;
-            const statusColor = c.isOver ? '#b24c3d' : c.isExact ? '#1f6952' : '#9c6f28';
-            const statusBg = c.isOver ? '#fdf0ee' : c.isExact ? '#e8f5ee' : '#fbf4e8';
-
-            return (
-              <button
-                key={c.cls.id}
-                onClick={() => setSelectedClassFilter(isSelected ? 'ALL' : c.cls.id)}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: '10px',
-                  border: `1.5px solid ${isSelected ? statusColor : '#e0e7e3'}`,
-                  background: isSelected ? statusBg : '#fffdf8',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                  boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.04)' : 'none',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong style={{ fontSize: '12.5px', color: '#173637' }}>Kelas {c.cls.name}</strong>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 800,
-                      padding: '2px 5px',
-                      borderRadius: '4px',
-                      background: statusBg,
-                      color: statusColor,
-                    }}
-                  >
-                    {c.isExact ? '100% Pas' : c.isOver ? `+${c.diff} JP` : `${c.diff} JP`}
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#4b6660' }}>
-                  <span>Alokasi:</span>
-                  <strong style={{ color: statusColor }}>{c.allocatedJP} / {totalWeeklySlots} JP</strong>
-                </div>
-
-                <div style={{ width: '100%', height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      width: `${Math.min(100, (c.allocatedJP / (totalWeeklySlots || 1)) * 100)}%`,
-                      height: '100%',
-                      background: statusColor,
-                    }}
-                  />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       {/* 3. INLINE FORM WITH REAL-TIME SIMULATION */}
       {formOpen && (
@@ -4777,6 +5048,26 @@ function RequirementsScreen({
 
         <div className="toolbar-divider" />
 
+        <div className="class-selector-wrap" style={{ minWidth: '160px' }}>
+          <div className="select-with-icon">
+            <GraduationCap size={14} />
+            <select
+              value={selectedClassFilter}
+              onChange={(e) => setSelectedClassFilter(e.target.value)}
+              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', fontWeight: 600, color: '#16483f' }}
+            >
+              <option value="ALL">Semua Rombel ({classCapacityStats.length})</option>
+              {classCapacityStats.map((c) => (
+                <option key={c.cls.id} value={c.cls.id}>
+                  Kelas {c.cls.name} ({c.allocatedJP}/{totalWeeklySlots} JP)
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="toolbar-divider" />
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '11px', color: '#556663', fontWeight: 700 }}>
             Menampilkan {filteredRequirements.length} dari {state.requirements.length} Alokasi
@@ -4809,7 +5100,7 @@ function RequirementsScreen({
                 </td>
               </tr>
             ) : (
-              filteredRequirements.map((r) => {
+              (reqPageSize === 0 ? filteredRequirements : filteredRequirements.slice((reqPage - 1) * reqPageSize, reqPage * reqPageSize)).map((r) => {
                 const cls = getClass(state, r.classId);
                 const sub = getSubject(state, r.subjectId);
                 const tch = getTeacher(state, r.teacherId);
@@ -4892,6 +5183,13 @@ function RequirementsScreen({
             )}
           </tbody>
         </table>
+        <TablePagination
+          totalItems={filteredRequirements.length}
+          page={reqPage}
+          pageSize={reqPageSize}
+          onPageChange={setReqPage}
+          onPageSizeChange={setReqPageSize}
+        />
       </div>
     </>
   );
@@ -4947,6 +5245,59 @@ function ValidationScreen({
         </div>
       </div>
 
+      {/* Real-Time Compliance & Audit KPI Grid */}
+      <div className="validation-summary-grid">
+        <div>
+          <div className="validation-summary-icon teal">
+            <ShieldCheck size={20} />
+          </div>
+          <div>
+            <span>SKOR KEPATUHAN</span>
+            <strong>
+              {Math.max(0, Math.min(100, 100 - hardErrors.length * 25 - (combined.length - hardErrors.length) * 5))}%
+            </strong>
+            <small>{hardErrors.length === 0 ? 'Lolos Semua Aturan' : `${hardErrors.length} Pelanggaran Wajib`}</small>
+          </div>
+        </div>
+
+        <div>
+          <div className="validation-summary-icon error">
+            <XCircle size={20} />
+          </div>
+          <div>
+            <span>KONFLIK KERAS</span>
+            <strong style={{ color: hardErrors.length > 0 ? '#b42318' : '#1f6850' }}>{hardErrors.length}</strong>
+            <small>{hardErrors.length === 0 ? 'Nihil Bentrok' : 'Wajib Diselesaikan'}</small>
+          </div>
+        </div>
+
+        <div>
+          <div className="validation-summary-icon warning">
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <span>PERINGATAN LEMAH</span>
+            <strong style={{ color: combined.length - hardErrors.length > 0 ? '#876123' : '#1f6850' }}>
+              {combined.length - hardErrors.length}
+            </strong>
+            <small>Saran Distribusi &amp; Beban</small>
+          </div>
+        </div>
+
+        <div>
+          <div className="validation-summary-icon info">
+            <CheckCircle2 size={20} />
+          </div>
+          <div>
+            <span>STATUS KELAYAKAN</span>
+            <strong style={{ color: hardErrors.length === 0 ? '#1f6850' : '#b42318' }}>
+              {hardErrors.length === 0 ? 'SIAP TERBIT' : 'DITAHAN'}
+            </strong>
+            <small>{hardErrors.length === 0 ? 'Jadwal Siap Edar' : 'Selesaikan Konflik'}</small>
+          </div>
+        </div>
+      </div>
+
       {/* AI Conflict Helper Integration */}
       {state.settings.geminiEnabled && (
         <AiConflictHelper
@@ -4956,25 +5307,46 @@ function ValidationScreen({
         />
       )}
 
-      <div className="issue-list" style={{ marginTop: '16px' }}>
-        {combined.map((issue) => (
-          <div key={issue.id} className={`issue-item issue-${issue.severity}`}>
-            <div className="issue-item-main" onClick={() => setExpandedIssue(expandedIssue === issue.id ? null : issue.id)}>
-              <div className="issue-severity-icon">
-                {issue.severity === 'error' ? <XCircle size={18} /> : <AlertTriangle size={18} />}
-              </div>
-              <div className="issue-copy">
-                <div className="issue-title-row">
-                  <strong>{issue.title}</strong>
-                  <span className="issue-code">{issue.code}</span>
+      {combined.length === 0 ? (
+        <div className="surface-card" style={{ marginTop: '16px', padding: '32px 24px', textAlign: 'center', background: '#f5faf7', border: '1.5px solid #d1fae5' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#d1fae5', color: '#065f46', display: 'grid', placeItems: 'center', margin: '0 auto 12px' }}>
+            <CheckCircle2 size={26} />
+          </div>
+          <h3 style={{ margin: '0 0 6px', fontSize: '17px', color: '#065f46', fontWeight: 800 }}>
+            Audit Kepatuhan: 100% Bebas Bentrok
+          </h3>
+          <p style={{ margin: '0 0 16px', color: '#16483f', fontSize: '13px', maxWidth: '520px', marginLeft: 'auto', marginRight: 'auto' }}>
+            Seluruh jadwal KBM, kuota mingguan rombel, batas beban guru, dan slot khusus (Upacara/Religi/Istirahat) telah diverifikasi secara deterministik tanpa konflik.
+          </p>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+            {onNavigate && (
+              <Button onClick={() => onNavigate('schedule')} icon={CalendarDays}>
+                Buka Matriks Jadwal
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="issue-list" style={{ marginTop: '16px' }}>
+          {combined.map((issue) => (
+            <div key={issue.id} className={`issue-item issue-${issue.severity}`}>
+              <div className="issue-item-main" onClick={() => setExpandedIssue(expandedIssue === issue.id ? null : issue.id)}>
+                <div className="issue-severity-icon">
+                  {issue.severity === 'error' ? <XCircle size={18} /> : <AlertTriangle size={18} />}
                 </div>
-                <p>{issue.message}</p>
-                {issue.context && <span className="issue-context">{issue.context}</span>}
+                <div className="issue-copy">
+                  <div className="issue-title-row">
+                    <strong>{issue.title}</strong>
+                    <span className="issue-code">{issue.code}</span>
+                  </div>
+                  <p>{issue.message}</p>
+                  {issue.context && <span className="issue-context">{issue.context}</span>}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -4987,8 +5359,8 @@ function HistoryScreen({ state, onRestore, onNavigate }: { state: AppState; onRe
     <>
       <PageHeading
         kicker="VERSION CONTROL"
-        title="Riwayat Versi Jadwal"
-        description="Snapshot jadwal resmi tersimpan secara lokal. Anda dapat memulihkan versi sebelumnya kapan saja."
+        title="Riwayat Versi &amp; Cadangan Data"
+        description="Snapshot jadwal resmi dan pencadangan data madrasah tersimpan secara lokal. Anda dapat memulihkan versi sebelumnya kapan saja."
         actions={<Button variant="secondary" icon={CalendarDays} onClick={() => onNavigate('schedule')}>Buka Jadwal</Button>}
       />
 

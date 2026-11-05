@@ -76,7 +76,7 @@ Daftar induk sumber yang dikumpulkan selama diskusi. Tautan dipertahankan seluru
 
 ## F. Cara sumber diterapkan
 
-- Dashboard visual/layout: Mobbin, Refero, Dribbble Dashboard, Godly. Bento Grids tetap tercatat sebagai referensi yang ditinjau, tetapi layout Bento sengaja tidak dipakai pada desain aktif sesuai keputusan pengguna.
+- Dashboard visual/layout: Mobbin, Refero, Dribbble Dashboard, Bento Grids, Godly.
 - Sidebar: Navbar Gallery, Dribbble Collapsible Sidebar, Behance navigation.
 - Hero/ilustrasi/footer: SupaHero, Behance, Footer Design, Lazyweb.
 - Interaksi: Morphin, SmoothUI, Lucian, Rare UI, Beautiful UI, Uiverse.

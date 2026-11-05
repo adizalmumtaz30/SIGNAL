@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   ArrowRight,
   BookOpen,
   CalendarDays,
@@ -17,12 +20,11 @@ import {
 import type { AppState, Day } from '../domain/types';
 import { jpToAstronomical } from '../domain/time';
 import { exportScheduleTeacherPDF } from '../utils/pdfExport';
-import { InfoNotice } from './InfoNotice';
 
 interface WorkloadDashboardProps {
   state: AppState;
-  onNavigateToSchedule: () => void;
-  onNavigateToMaster: () => void;
+  onNavigateToSchedule?: () => void;
+  onNavigateToMaster?: () => void;
   onNavigateToRequirements?: () => void;
 }
 
@@ -30,12 +32,16 @@ export function WorkloadDashboard({
   state,
   onNavigateToSchedule,
   onNavigateToMaster,
-  onNavigateToRequirements,
+  onNavigateToRequirements: _onNavigateToRequirements,
 }: WorkloadDashboardProps) {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('all');
   const [selectedClassId, setSelectedClassId] = useState<string>('all');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortKey, setSortKey] = useState<'name' | 'jp' | 'max' | 'percentage'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   const entries = useMemo(() => state.draft ?? state.activeSchedule ?? [], [state.draft, state.activeSchedule]);
   const activeTeachers = useMemo(() => state.teachers.filter((t) => t.isActive), [state.teachers]);
@@ -132,7 +138,7 @@ export function WorkloadDashboard({
 
   // Filtered teachers for table view
   const displayTeachers = useMemo(() => {
-    return teacherStats.filter((stat) => {
+    let rows = teacherStats.filter((stat) => {
       if (selectedTeacherId !== 'all' && stat.teacher.id !== selectedTeacherId) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -142,33 +148,27 @@ export function WorkloadDashboard({
       }
       return true;
     });
-  }, [teacherStats, selectedTeacherId, searchQuery]);
+    rows.sort((a, b) => {
+      let diff = 0;
+      if (sortKey === 'name') diff = a.teacher.name.localeCompare(b.teacher.name);
+      else if (sortKey === 'jp') diff = a.totalJP - b.totalJP;
+      else if (sortKey === 'max') diff = a.maxWeeklyJP - b.maxWeeklyJP;
+      else if (sortKey === 'percentage') diff = a.percentage - b.percentage;
+      return sortOrder === 'asc' ? diff : -diff;
+    });
+    return rows;
+  }, [teacherStats, selectedTeacherId, searchQuery, sortKey, sortOrder]);
+
+  const paginatedTeachers = useMemo(() => {
+    if (pageSize <= 0) return displayTeachers;
+    const start = (page - 1) * pageSize;
+    return displayTeachers.slice(start, start + pageSize);
+  }, [displayTeachers, page, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(displayTeachers.length / (pageSize || 1)));
 
   return (
     <div className="workload-dashboard-page">
-      {/* Consolidated Academic Hub Switcher */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-        <button
-          className="button button-secondary"
-          onClick={onNavigateToMaster}
-          style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
-        >
-          Data Master (Kelas, Guru, Mapel)
-        </button>
-        {onNavigateToRequirements && (
-          <button
-            className="button button-secondary"
-            onClick={onNavigateToRequirements}
-            style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}
-          >
-            Alokasi Kebutuhan JP
-          </button>
-        )}
-        <button className="button button-primary" style={{ padding: '8px 14px', fontSize: '12.5px', borderRadius: '8px' }}>
-          Analisis Beban Guru
-        </button>
-      </div>
-
       {/* Top Banner / Hero */}
       <div className="workload-hero">
         <div className="workload-hero-copy">
@@ -176,9 +176,11 @@ export function WorkloadDashboard({
             <span className="eyebrow-line" />
             ANALISIS BEBAN MENGAJAR
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <h2 style={{ margin: 0 }}>Statistik & Distribusi Beban Guru</h2>
-            <InfoNotice text="Pantau jam mengajar per minggu, perbandingan jam pelajaran (JP) dengan jam astronomis riil, jumlah sesi belajar, dan distribusi harian secara transparan." />
+          <div>
+            <h2 style={{ margin: 0 }}>Statistik &amp; Distribusi Beban Guru</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#5e7d83' }}>
+              Distribusi jam tatap muka mingguan, konversi jam astronomis, dan pemenuhan batas kuota guru.
+            </p>
           </div>
         </div>
         <div className="workload-hero-badges">
@@ -227,16 +229,20 @@ export function WorkloadDashboard({
 
         <div className="stat-card tone-blue">
           <div className="stat-top">
-            <span>Durasi Pembelajaran</span>
+            <span>Beban Standar (≥24 JP)</span>
             <div className="stat-icon">
-              <Clock size={17} />
+              <GraduationCap size={17} />
             </div>
           </div>
           <div className="stat-value-row">
-            <strong>{periodMinutes}</strong>
-            <span className="stat-unit">menit/JP</span>
+            <strong>{teacherStats.filter((t) => t.totalJP >= 24).length}</strong>
+            <span className="stat-unit">/ {activeTeachers.length} guru</span>
           </div>
-          <div className="stat-sub">Standar Madrasah Tsanawiyah (MTs)</div>
+          <div className="stat-sub">
+            {activeTeachers.length > 0
+              ? `${Math.round((teacherStats.filter((t) => t.totalJP >= 24).length / activeTeachers.length) * 100)}% penuhi syarat TPG Kemenag`
+              : 'Standar beban kerja guru'}
+          </div>
           <div className="stat-accent" />
         </div>
 
@@ -248,10 +254,10 @@ export function WorkloadDashboard({
             </div>
           </div>
           <div className="stat-value-row">
-            <strong>{overloadedTeachersCount === 0 ? 'Optimal' : `${overloadedTeachersCount} Lebih`}</strong>
+            <strong>{overloadedTeachersCount === 0 ? 'Optimal' : `${overloadedTeachersCount} Overload`}</strong>
           </div>
           <div className="stat-sub">
-            {unassignedTeachersCount > 0 ? `${unassignedTeachersCount} guru belum ada jadwal` : 'Semua guru memiliki alokasi'}
+            {unassignedTeachersCount > 0 ? `${unassignedTeachersCount} guru masih di bawah beban` : 'Seluruh guru dalam batas wajar'}
           </div>
           <div className="stat-accent" />
         </div>
@@ -268,10 +274,10 @@ export function WorkloadDashboard({
             <span>Jalankan generator atau tempatkan pelajaran di Jadwal untuk melihat statistik beban aktual.</span>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={onNavigateToMaster} style={{ background: '#eef5f2', color: '#24635e', border: '1px solid #b6dfd5' }}>
+            <button type="button" className="button button-sm button-secondary" onClick={onNavigateToMaster}>
               Data Guru
             </button>
-            <button onClick={onNavigateToSchedule}>
+            <button type="button" className="button button-sm button-primary" onClick={onNavigateToSchedule}>
               Buka Jadwal <ArrowRight size={14} />
             </button>
           </div>
@@ -359,18 +365,52 @@ export function WorkloadDashboard({
           <table className="data-table">
             <thead>
               <tr>
-                <th>Guru & Kode</th>
-                <th>Beban Mengajar (JP)</th>
-                <th>Jam Astronomis</th>
-                <th>Batas Mingguan</th>
-                <th>Persentase</th>
+                <th
+                  onClick={() => {
+                    if (sortKey === 'name') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    else { setSortKey('name'); setSortOrder('asc'); }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  title="Klik untuk mengurutkan nama guru"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>Guru & Kode</span>
+                    <ArrowUpDown size={12} style={{ opacity: sortKey === 'name' ? 1 : 0.4 }} />
+                  </div>
+                </th>
+                <th
+                  onClick={() => {
+                    if (sortKey === 'jp') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    else { setSortKey('jp'); setSortOrder('desc'); }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  title="Klik untuk mengurutkan beban JP"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>Beban &amp; Batas Mingguan</span>
+                    <ArrowUpDown size={12} style={{ opacity: sortKey === 'jp' ? 1 : 0.4 }} />
+                  </div>
+                </th>
+                <th
+                  onClick={() => {
+                    if (sortKey === 'percentage') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    else { setSortKey('percentage'); setSortOrder('desc'); }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  title="Klik untuk mengurutkan persentase kuota"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>Persentase Kuota</span>
+                    <ArrowUpDown size={12} style={{ opacity: sortKey === 'percentage' ? 1 : 0.4 }} />
+                  </div>
+                </th>
                 <th>Distribusi Hari (Sen-Sab)</th>
                 <th>Total Sesi</th>
                 <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {displayTeachers.map((stat) => {
+              {paginatedTeachers.map((stat) => {
                 const isOver = stat.isOverloaded;
                 return (
                   <tr key={stat.teacher.id}>
@@ -394,29 +434,17 @@ export function WorkloadDashboard({
                     </td>
 
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                        <strong style={{ fontSize: '15px', color: isOver ? '#b8685b' : '#173637' }}>
-                          {stat.totalJP}
-                        </strong>
-                        <span style={{ fontSize: '11px', color: '#758582' }}>JP</span>
-                      </div>
-                    </td>
-
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontWeight: 600, color: '#274744', fontSize: '12px' }}>
-                          {stat.astroHours} Jam
-                        </span>
-                        <small style={{ color: '#889892', fontSize: '10px' }}>
-                          ({stat.astroMinutes} Menit)
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                          <strong style={{ fontSize: '14.5px', color: isOver ? '#b8685b' : '#173637' }}>
+                            {stat.totalJP}
+                          </strong>
+                          <span style={{ fontSize: '11.5px', color: '#687a75' }}>/ {stat.maxWeeklyJP} JP</span>
+                        </div>
+                        <small style={{ color: '#687a75', fontSize: '11px', display: 'block', marginTop: '2px' }}>
+                          {stat.astroHours} Jam Efektif {stat.astroMinutes > 0 ? `(${stat.astroMinutes}m)` : ''}
                         </small>
                       </div>
-                    </td>
-
-                    <td>
-                      <span style={{ fontSize: '12px', color: '#556663' }}>
-                        {stat.maxWeeklyJP} JP
-                      </span>
                     </td>
 
                     <td>
@@ -483,8 +511,8 @@ export function WorkloadDashboard({
 
                     <td>
                       <button
-                        className="button button-quiet"
-                        style={{ padding: '6px 10px', height: '30px', fontSize: '10px' }}
+                        type="button"
+                        className="button button-sm button-quiet"
                         onClick={() => exportScheduleTeacherPDF(state, stat.teacher.id)}
                         title="Unduh Jadwal Guru PDF"
                       >
@@ -505,13 +533,69 @@ export function WorkloadDashboard({
             </div>
           )}
         </div>
+
+        {/* Table Pagination Controls */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '12px 18px',
+            borderTop: '1px solid #edf2ee',
+            flexWrap: 'wrap',
+            gap: '10px',
+            fontSize: '12px',
+            color: '#5e756e',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>Tampilkan:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d0dad4' }}
+            >
+              <option value={10}>10 Baris</option>
+              <option value={20}>20 Baris</option>
+              <option value={25}>25 Baris</option>
+              <option value={0}>Semua ({displayTeachers.length})</option>
+            </select>
+            <span>Total {displayTeachers.length} guru terdata</span>
+          </div>
+
+          {pageSize > 0 && totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                className="button button-quiet"
+                style={{ padding: '4px 8px' }}
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft size={14} /> Sebelumnya
+              </button>
+              <span>
+                Halaman <strong>{page}</strong> dari <strong>{totalPages}</strong>
+              </span>
+              <button
+                type="button"
+                className="button button-quiet"
+                style={{ padding: '4px 8px' }}
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Berikutnya <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Fairness & Verification Explanatory Box */}
-      <div className="inline-info" style={{ marginTop: '16px', padding: '14px 18px', background: '#f8faf7', borderRadius: '12px', border: '1px solid #dce4dc' }}>
-        <CheckCircle2 size={18} style={{ color: '#387468', flexShrink: 0 }} />
+      <div className="inline-info" style={{ marginTop: '16px', padding: '12px 16px', background: '#f8faf7', borderRadius: '12px', border: '1px solid #dce4dc' }}>
+        <CheckCircle2 size={16} style={{ color: '#387468', flexShrink: 0 }} />
         <div style={{ fontSize: '11px', color: '#405a54', lineHeight: 1.5 }}>
-          <strong>Prinsip Verifikasi Beban Guru:</strong> Jumlah jam pelajaran (JP) dipengaruhi oleh alokasi kurikulum mata pelajaran masing-masing tingkat (misal Matematika 5 JP/minggu vs Qur’an Hadits 2 JP/minggu). Perbedaan jumlah JP tidak serta-merta mencerminkan ketidakadilan beban kerja, melainkan alokasi struktural kurikulum madrasah yang dapat diverifikasi pada halaman Kebutuhan JP.
+          <strong>Prinsip Verifikasi Beban Guru:</strong> Jumlah jam pelajaran (JP) mengacu pada kurikulum madrasah dan kualifikasi pendidik yang terverifikasi.
         </div>
       </div>
     </div>

@@ -411,38 +411,38 @@ export function SchedulePdfExportModal({
             }}
           >
             <div>
-              <span style={{ fontSize: '9px', color: '#52776d', fontWeight: 800, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10.5px', color: '#52776d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 TOTAL ALOKASI JP
               </span>
-              <strong style={{ fontSize: '14.5px', color: '#173637', display: 'block', marginTop: '2px' }}>
+              <strong style={{ fontSize: '16px', color: '#173637', display: 'block', marginTop: '2px', fontWeight: 800 }}>
                 {classPreviewStats.totalJp} JP
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '9px', color: '#52776d', fontWeight: 800, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10.5px', color: '#52776d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 WAKTU ASTRONOMIS
               </span>
-              <strong style={{ fontSize: '13px', color: '#173637', display: 'block', marginTop: '2px' }}>
+              <strong style={{ fontSize: '15px', color: '#173637', display: 'block', marginTop: '2px', fontWeight: 800 }}>
                 {classPreviewStats.astroFormatted}
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '9px', color: '#52776d', fontWeight: 800, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10.5px', color: '#52776d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 GURU PENGAJAR
               </span>
-              <strong style={{ fontSize: '14.5px', color: '#173637', display: 'block', marginTop: '2px' }}>
+              <strong style={{ fontSize: '16px', color: '#173637', display: 'block', marginTop: '2px', fontWeight: 800 }}>
                 {classPreviewStats.teacherCount} Pendidik
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '9px', color: '#52776d', fontWeight: 800, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10.5px', color: '#52776d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 ESTIMASI DOKUMEN
               </span>
-              <strong style={{ fontSize: '14px', color: '#1f6952', display: 'block', marginTop: '2px' }}>
-                {classPreviewStats.pageEstimate} Halaman (A4)
+              <strong style={{ fontSize: '15px', color: '#1f6952', display: 'block', marginTop: '2px', fontWeight: 800 }}>
+                {classPreviewStats.pageEstimate} Halaman ({paperSize.toUpperCase()})
               </strong>
             </div>
           </div>
@@ -1041,7 +1041,6 @@ export function SchedulePdfExportModal({
               type="button"
               className="button button-secondary"
               onClick={onClose}
-              style={{ height: '36px', fontSize: '12px' }}
             >
               Batal
             </button>
@@ -1050,7 +1049,6 @@ export function SchedulePdfExportModal({
               className="button button-primary"
               onClick={handleDownload}
               disabled={isExporting}
-              style={{ height: '36px', fontSize: '12px' }}
             >
               <Download size={15} />
               {isExporting ? 'Memproses PDF…' : 'Unduh Dokumen PDF Resmi (A4)'}

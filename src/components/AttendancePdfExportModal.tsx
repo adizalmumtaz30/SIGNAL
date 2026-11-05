@@ -262,30 +262,31 @@ export function AttendancePdfExportModal({
             }}
           >
             <div>
-              <span style={{ fontSize: '10px', color: '#52776d', fontWeight: 800, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10.5px', color: '#52776d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 HARI EFEKTIF (HE)
               </span>
-              <strong style={{ fontSize: '16px', color: '#173637', display: 'block', marginTop: '2px' }}>
+              <strong style={{ fontSize: '16px', color: '#173637', display: 'block', marginTop: '2px', fontWeight: 800 }}>
                 {previewStats.effectiveDays} Hari KBM
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '10px', color: '#52776d', fontWeight: 800, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10.5px', color: '#52776d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 GURU DIREKAP
               </span>
-              <strong style={{ fontSize: '16px', color: '#173637', display: 'block', marginTop: '2px' }}>
+              <strong style={{ fontSize: '16px', color: '#173637', display: 'block', marginTop: '2px', fontWeight: 800 }}>
                 {previewStats.teacherCount} Guru Terpilih
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '10px', color: '#52776d', fontWeight: 800, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '10.5px', color: '#52776d', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 RATA-RATA OTOMATIS
               </span>
               <strong
                 style={{
                   fontSize: '16px',
+                  fontWeight: 800,
                   color: previewStats.avgRate >= 90 ? '#1f6952' : '#b24c3d',
                   display: 'block',
                   marginTop: '2px',

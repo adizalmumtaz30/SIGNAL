@@ -6,7 +6,6 @@ import {
   Users,
   BookOpen,
   CalendarCheck,
-  Check,
   AlertTriangle,
   CheckCircle2,
   Info,
@@ -39,19 +38,6 @@ interface EntityEditModalProps {
   onSaveSubject: (sub: Subject, isNew: boolean) => void;
   onSaveRequirement: (req: Requirement, isNew: boolean) => void;
 }
-
-const PALETTE = [
-  '#2f7771', // Deep Teal
-  '#24635e', // Dark Teal
-  '#3d8b7a', // Jade Teal
-  '#b38b3f', // Brass Gold
-  '#4a7b9d', // Slate Blue
-  '#845ec2', // Purple
-  '#d65db1', // Rose
-  '#ff6f91', // Coral
-  '#d97736', // Terracotta
-  '#596e79', // Ash
-];
 
 export function EntityEditModal({
   isOpen,
@@ -549,45 +535,7 @@ export function EntityEditModal({
                 </div>
               </div>
 
-              <div className="field-group">
-                <label>Warna Aksen di Jadwal</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {PALETTE.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setSubjectColor(c)}
-                      style={{
-                        width: '26px',
-                        height: '26px',
-                        borderRadius: '50%',
-                        background: c,
-                        border: subjectColor === c ? '2px solid #173637' : '1px solid transparent',
-                        outline: subjectColor === c ? '2px solid #b38b3f' : 'none',
-                        cursor: 'pointer',
-                        display: 'grid',
-                        placeItems: 'center',
-                      }}
-                    >
-                      {subjectColor === c && <Check size={14} color="#fff" />}
-                    </button>
-                  ))}
-                  <input
-                    type="color"
-                    value={subjectColor}
-                    onChange={(e) => setSubjectColor(e.target.value)}
-                    title="Pilih warna kustom"
-                    style={{
-                      width: '32px',
-                      height: '28px',
-                      padding: 0,
-                      border: '1px solid #ccc',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                    }}
-                  />
-                </div>
-              </div>
+
 
               <div className="field-group">
                 <label>Status Mapel</label>

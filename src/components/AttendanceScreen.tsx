@@ -1,22 +1,26 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Calendar,
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   Edit2,
+  Info,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Trash2,
   UserCheck,
   Users,
+  X,
 } from 'lucide-react';
-import type { AppState, AttendanceRecord, AttendanceStatus, Holiday } from '../domain/types';
+import type { AppState, AttendanceRecord, AttendanceStatus, Day, Holiday } from '../domain/types';
 import { AttendancePdfExportModal } from './AttendancePdfExportModal';
-import { InfoNotice } from './InfoNotice';
 
 interface AttendanceScreenProps {
   state: AppState;
@@ -57,6 +61,10 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
   // Daily Mass Entry Working State
   const [dailyEntries, setDailyEntries] = useState<Record<string, { status: AttendanceStatus; notes: string }>>({});
   const [dailyInitializedDate, setDailyInitializedDate] = useState<string>('');
+  const [dailySearch, setDailySearch] = useState('');
+  const [dailyStatusFilter, setDailyStatusFilter] = useState<string>('all');
+  const [dailyPage, setDailyPage] = useState(1);
+  const [dailyPageSize, setDailyPageSize] = useState<number>(10);
 
   // Mass Monthly Entry Working State
   const [massMonthStatus, setMassMonthStatus] = useState<AttendanceStatus>('HADIR');
@@ -64,11 +72,36 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
   const [massMonthSelectedTeachers, setMassMonthSelectedTeachers] = useState<string[]>([]);
   const [massMonthStartDate, setMassMonthStartDate] = useState(`${new Date().toISOString().slice(0, 7)}-01`);
   const [massMonthEndDate, setMassMonthEndDate] = useState(`${new Date().toISOString().slice(0, 7)}-28`);
+  const [showMonthlyHelp, setShowMonthlyHelp] = useState(false);
+
+  // Teacher Ledger Working State
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState<number>(15);
+  const [ledgerFilter, setLedgerFilter] = useState<'all' | 'workdays' | 'leaves'>('all');
+
+  // Recap Working State
+  const [recapSearch, setRecapSearch] = useState('');
+  const [recapSortKey, setRecapSortKey] = useState<'no' | 'name' | 'rate' | 'hadir'>('no');
+  const [recapSortOrder, setRecapSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleToggleRecapSort = (key: 'no' | 'name' | 'rate' | 'hadir') => {
+    if (recapSortKey === key) {
+      setRecapSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setRecapSortKey(key);
+      setRecapSortOrder('asc');
+    }
+  };
+  const [recapPage, setRecapPage] = useState(1);
+  const [recapPageSize, setRecapPageSize] = useState<number>(10);
 
   // Holiday Form State
   const [newHolidayDate, setNewHolidayDate] = useState('');
   const [newHolidayName, setNewHolidayName] = useState('');
   const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null);
+  const [holidaySearch, setHolidaySearch] = useState('');
+  const [holidayPage, setHolidayPage] = useState(1);
+  const [holidayPageSize, setHolidayPageSize] = useState<number>(10);
 
   const activeTeachers = useMemo(() => state.teachers.filter((t) => t.isActive), [state.teachers]);
   const holidays = useMemo(() => state.holidays ?? [], [state.holidays]);
@@ -129,7 +162,6 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
       onNotify('Rentang tanggal tidak valid.', 'warning');
       return;
     }
-
     const targetTeachers = massMonthTarget === 'all'
       ? activeTeachers.map((t) => t.id)
       : massMonthSelectedTeachers;
@@ -139,13 +171,11 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
       return;
     }
 
-    // Generate date array
     const dates: string[] = [];
     const cur = new Date(massMonthStartDate);
     const end = new Date(massMonthEndDate);
     while (cur <= end) {
       const dateStr = cur.toISOString().slice(0, 10);
-      // Skip if holiday or Sunday (0)
       const dayOfWeek = cur.getDay();
       const isSunday = dayOfWeek === 0;
       const isHoliday = holidays.some((h) => h.date === dateStr);
@@ -172,7 +202,6 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
       }
       return { ...prev, attendance: list };
     });
-
     onNotify(`Presensi ${massMonthStatus} berhasil diterapkan untuk ${targetTeachers.length} guru pada ${dates.length} hari efektif.`, 'success');
   };
 
@@ -199,7 +228,37 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
     });
   };
 
-  // 4. Monthly Recap Stats
+  // 4. Monthly Statistics Calculation
+  const [currentYearNum, currentMonthNum] = useMemo(() => {
+    const [yStr, mStr] = currentMonth.split('-');
+    return [Number(yStr), Number(mStr)];
+  }, [currentMonth]);
+
+  const daysInCurrentMonth = useMemo(() => {
+    return new Date(currentYearNum, currentMonthNum, 0).getDate();
+  }, [currentYearNum, currentMonthNum]);
+
+  const effectiveDaysInMonth = useMemo(() => {
+    let count = 0;
+    const activeDays = state.settings.activeDays;
+    const dayNames: Day[] = ['Minggu' as Day, 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    for (let d = 1; d <= daysInCurrentMonth; d++) {
+      const curDate = new Date(currentYearNum, currentMonthNum - 1, d);
+      const dayName = dayNames[curDate.getDay()];
+      const dateStr = `${currentYearNum}-${String(currentMonthNum).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isHol = holidays.some((h) => h.date === dateStr);
+      if (curDate.getDay() !== 0 && activeDays.includes(dayName) && !isHol) {
+        count++;
+      }
+    }
+    return count > 0 ? count : 24;
+  }, [currentYearNum, currentMonthNum, daysInCurrentMonth, holidays, state.settings.activeDays]);
+
+  const holidaysInMonth = useMemo(() => {
+    return holidays.filter((h) => h.date.startsWith(currentMonth));
+  }, [holidays, currentMonth]);
+
+  // Recap Data Calculation
   const recapData = useMemo(() => {
     return activeTeachers
       .filter((t) => recapSelectedTeachers.includes(t.id))
@@ -213,8 +272,7 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
         const alpa = records.filter((r) => r.status === 'ALPA').length;
         const dinas = records.filter((r) => r.status === 'DINAS_LUAR').length;
         const total = records.length;
-        const rate = total > 0 ? Math.round(((hadir + dinas) / total) * 100) : 100;
-
+        const rate = effectiveDaysInMonth > 0 ? Math.min(100, Math.round(((hadir + dinas) / effectiveDaysInMonth) * 100)) : 100;
         return {
           no: idx + 1,
           teacher,
@@ -227,7 +285,30 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
           rate,
         };
       });
-  }, [activeTeachers, recapSelectedTeachers, attendanceList, currentMonth]);
+  }, [activeTeachers, recapSelectedTeachers, attendanceList, currentMonth, effectiveDaysInMonth]);
+
+  const overallAvgRate = useMemo(() => {
+    if (recapData.length === 0) return 100;
+    const sum = recapData.reduce((acc, r) => acc + r.rate, 0);
+    return Math.round(sum / recapData.length);
+  }, [recapData]);
+
+  // Contextual Daily Statistics
+  const dailyPresentCount = useMemo(() => {
+    return activeTeachers.filter((t) => (dailyEntries[t.id]?.status ?? 'HADIR') === 'HADIR').length;
+  }, [activeTeachers, dailyEntries]);
+
+  const dailyPermitCount = useMemo(() => {
+    return activeTeachers.filter((t) => ['IZIN', 'SAKIT', 'DINAS_LUAR'].includes(dailyEntries[t.id]?.status)).length;
+  }, [activeTeachers, dailyEntries]);
+
+  const dailyAbsentCount = useMemo(() => {
+    return activeTeachers.filter((t) => dailyEntries[t.id]?.status === 'ALPA').length;
+  }, [activeTeachers, dailyEntries]);
+
+  const dailyAttendanceRate = useMemo(() => {
+    return activeTeachers.length > 0 ? Math.round((dailyPresentCount / activeTeachers.length) * 100) : 100;
+  }, [dailyPresentCount, activeTeachers]);
 
   // 5. Add / Edit / Delete Holiday
   const handleSaveHoliday = (e: React.FormEvent) => {
@@ -243,7 +324,7 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
           .map((h) =>
             h.id === editingHolidayId
               ? { ...h, date: newHolidayDate, name: newHolidayName.trim() }
-              : h
+              : h,
           )
           .sort((a, b) => a.date.localeCompare(b.date)),
       }));
@@ -253,7 +334,6 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
       onNotify('Hari libur berhasil diperbarui.', 'success');
       return;
     }
-
     const holiday: Holiday = {
       id: `HOL-${Date.now().toString(36)}`,
       date: newHolidayDate,
@@ -292,221 +372,334 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
   };
 
   const isCurrentDateHoliday = holidays.find((h) => h.date === currentDate);
+  const isDateRecorded = useMemo(() => attendanceList.some((a) => a.date === currentDate), [attendanceList, currentDate]);
+
+  // Filtered & Paginated Daily Teachers
+  const filteredDailyTeachers = useMemo(() => {
+    return activeTeachers.filter((t) => {
+      if (dailySearch.trim()) {
+        const query = dailySearch.toLowerCase();
+        const matchName = t.name.toLowerCase().includes(query);
+        const matchCode = t.code.toLowerCase().includes(query);
+        if (!matchName && !matchCode) return false;
+      }
+      if (dailyStatusFilter !== 'all') {
+        const entry = dailyEntries[t.id] ?? { status: 'HADIR' };
+        if (entry.status !== dailyStatusFilter) return false;
+      }
+      return true;
+    });
+  }, [activeTeachers, dailySearch, dailyStatusFilter, dailyEntries]);
+
+  const paginatedDailyTeachers = useMemo(() => {
+    if (dailyPageSize <= 0) return filteredDailyTeachers;
+    const start = (dailyPage - 1) * dailyPageSize;
+    return filteredDailyTeachers.slice(start, start + dailyPageSize);
+  }, [filteredDailyTeachers, dailyPage, dailyPageSize]);
+
+  const totalDailyPages = Math.max(1, Math.ceil(filteredDailyTeachers.length / (dailyPageSize || 1)));
+
+  // Filtered & Paginated Recap Rows
+  const sortedRecapRows = useMemo(() => {
+    let rows = [...recapData];
+    if (recapSearch.trim()) {
+      const q = recapSearch.toLowerCase();
+      rows = rows.filter((r) => r.teacher.name.toLowerCase().includes(q) || r.teacher.code.toLowerCase().includes(q));
+    }
+    rows.sort((a, b) => {
+      let diff = 0;
+      if (recapSortKey === 'no') diff = a.no - b.no;
+      else if (recapSortKey === 'name') diff = a.teacher.name.localeCompare(b.teacher.name);
+      else if (recapSortKey === 'rate') diff = a.rate - b.rate;
+      else if (recapSortKey === 'hadir') diff = a.hadir - b.hadir;
+      return recapSortOrder === 'asc' ? diff : -diff;
+    });
+    return rows;
+  }, [recapData, recapSearch, recapSortKey, recapSortOrder]);
+
+  const paginatedRecapRows = useMemo(() => {
+    if (recapPageSize <= 0) return sortedRecapRows;
+    const start = (recapPage - 1) * recapPageSize;
+    return sortedRecapRows.slice(start, start + recapPageSize);
+  }, [sortedRecapRows, recapPage, recapPageSize]);
+
+  const totalRecapPages = Math.max(1, Math.ceil(sortedRecapRows.length / (recapPageSize || 1)));
+
+  // Filtered & Paginated Holidays
+  const filteredHolidays = useMemo(() => {
+    if (!holidaySearch.trim()) return holidays;
+    const q = holidaySearch.toLowerCase();
+    return holidays.filter((h) => h.name.toLowerCase().includes(q) || h.date.includes(q));
+  }, [holidays, holidaySearch]);
+
+  const paginatedHolidays = useMemo(() => {
+    if (holidayPageSize <= 0) return filteredHolidays;
+    const start = (holidayPage - 1) * holidayPageSize;
+    return filteredHolidays.slice(start, start + holidayPageSize);
+  }, [filteredHolidays, holidayPage, holidayPageSize]);
+
+  const totalHolidayPages = Math.max(1, Math.ceil(filteredHolidays.length / (holidayPageSize || 1)));
 
   return (
-    <div className="attendance-screen">
-      {/* Screen Header */}
-      <div className="page-heading">
+    <div className="attendance-screen" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* A. Header */}
+      <div className="page-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px' }}>
         <div>
-          <div className="eyebrow">
+          <div className="eyebrow" style={{ fontSize: '10px', fontWeight: 800, color: '#38635c', letterSpacing: '0.1em' }}>
             <span className="eyebrow-line" />
-            MODUL PRESENSI & KEHADIRAN
+            MODUL PRESENSI & KEHADIRAN GURU
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <h1 style={{ margin: 0 }}>Presensi & Absensi Guru</h1>
-            <InfoNotice text="Kelola pencatatan kehadiran harian, massal bulanan, rekapitulasi kehadiran dengan persentase otomatis, ekspor PDF resmi, dan jadwal hari libur madrasah." />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: '#0b3435' }}>Presensi Guru</h1>
           </div>
+          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#5b756e', lineHeight: 1.4 }}>
+            Pencatatan presensi harian, massal bulanan, rekapitulasi kehadiran, dan hari libur madrasah.
+          </p>
         </div>
-        <div className="page-actions">
-          <button className="button button-primary" onClick={() => setPdfModalOpen(true)}>
+        <div className="page-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={() => setPdfModalOpen(true)}
+            style={{ height: '38px', gap: '8px', fontSize: '12.5px' }}
+          >
             <Download size={15} /> Ekspor PDF Rekap Bulanan (A4)
           </button>
         </div>
       </div>
 
-      {/* Segmented Navigation Tabs */}
-      <div className="segmented-tabs" style={{ marginBottom: '18px' }}>
+      {/* B. Dynamic Data-Backed Summary Statistics */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '12px',
+        }}
+      >
+        {activeTab === 'daily' ? (
+          <>
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                GURU HADIR HARI INI
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#1f6952', fontWeight: 800 }}>{dailyPresentCount}</strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>/ {activeTeachers.length} Guru</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                TINGKAT KEHADIRAN
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 800,
+                    color: dailyAttendanceRate >= 90 ? '#1f6952' : dailyAttendanceRate >= 75 ? '#c98a2c' : '#b24c3d',
+                  }}
+                >
+                  {dailyAttendanceRate}%
+                </strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Tingkat Presensi</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                DISPENSASI / IJIN / SAKIT
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#bc945e', fontWeight: 800 }}>{dailyPermitCount}</strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Pendidik Tercatat</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                ALPA / TANPA KETERANGAN
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 800,
+                    color: dailyAbsentCount > 0 ? '#b24c3d' : '#1f6952',
+                  }}
+                >
+                  {dailyAbsentCount}
+                </strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>
+                  {dailyAbsentCount === 0 ? 'Nihil (Tertib)' : 'Perlu Konfirmasi'}
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                TOTAL GURU AKTIF
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#173637', fontWeight: 800 }}>{activeTeachers.length}</strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Pendidik Terdaftar</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                HARI EFEKTIF BULAN INI
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#1f6952', fontWeight: 800 }}>{effectiveDaysInMonth}</strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Hari KBM Aktif</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                RATA-RATA KEHADIRAN BULANAN
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 800,
+                    color: overallAvgRate >= 90 ? '#1f6952' : overallAvgRate >= 75 ? '#c98a2c' : '#b24c3d',
+                  }}
+                >
+                  {overallAvgRate}%
+                </strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Bulan {currentMonth}</span>
+              </div>
+            </div>
+
+            <div className="surface-card" style={{ padding: '14px 16px' }}>
+              <span style={{ fontSize: '11px', color: '#55726b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                HARI LIBUR BULAN INI
+              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '3px' }}>
+                <strong style={{ fontSize: '22px', color: '#bc945e', fontWeight: 800 }}>{holidaysInMonth.length}</strong>
+                <span style={{ fontSize: '12px', color: '#687a75' }}>Tanggal Libur Terjadwal</span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* C. Sub-navigasi Tugas (Segmented Navigation) */}
+      <div className="segmented-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', background: '#eef3ef', padding: '4px', borderRadius: '10px' }}>
         <button
-          className={activeTab === 'daily' ? 'active' : ''}
-          onClick={() => setActiveTab('daily')}
+          type="button"
+          className={`view-switch-btn ${activeTab === 'daily' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('daily'); setDailyPage(1); }}
         >
           <CalendarDays size={14} style={{ marginRight: '6px' }} />
-          1. Input Massal Harian
+          Harian
         </button>
         <button
-          className={activeTab === 'monthly' ? 'active' : ''}
+          type="button"
+          className={`view-switch-btn ${activeTab === 'monthly' ? 'active' : ''}`}
           onClick={() => setActiveTab('monthly')}
         >
           <Calendar size={14} style={{ marginRight: '6px' }} />
-          2. Input Bulanan
+          Massal Bulanan
         </button>
         <button
-          className={activeTab === 'teacher' ? 'active' : ''}
-          onClick={() => setActiveTab('teacher')}
+          type="button"
+          className={`view-switch-btn ${activeTab === 'teacher' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('teacher'); setLedgerPage(1); }}
         >
           <Users size={14} style={{ marginRight: '6px' }} />
-          3. Input per Guru
+          Per Guru
         </button>
         <button
-          className={activeTab === 'recap' ? 'active' : ''}
-          onClick={() => setActiveTab('recap')}
+          type="button"
+          className={`view-switch-btn ${activeTab === 'recap' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('recap'); setRecapPage(1); }}
         >
           <UserCheck size={14} style={{ marginRight: '6px' }} />
-          4. Rekap Bulanan & PDF
+          Rekap & PDF
         </button>
         <button
-          className={activeTab === 'holidays' ? 'active' : ''}
-          onClick={() => setActiveTab('holidays')}
+          type="button"
+          className={`view-switch-btn ${activeTab === 'holidays' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('holidays'); setHolidayPage(1); }}
         >
           <Clock size={14} style={{ marginRight: '6px' }} />
-          5. Pengaturan Hari Libur ({holidays.length})
+          Hari Libur ({holidays.length})
         </button>
       </div>
 
-      {/* TAB 1: INPUT MASSAL SEMUA GURU PER HARI */}
+      {/* ========================================================================= */}
+      {/* TAB 1: INPUT MASSAL SEMUA GURU PER HARI (HARIAN)                           */}
+      {/* ========================================================================= */}
       {activeTab === 'daily' && (
-        <div className="surface-card">
-          <div className="card-heading">
+        <div className="surface-card" style={{ padding: '16px 20px' }}>
+          <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <div className="card-eyebrow">DAILY TEACHER ATTENDANCE</div>
-              <h3>Pencatatan Presensi Harian Semua Guru</h3>
+              <div className="card-eyebrow" style={{ fontSize: '10px', color: '#55726b', fontWeight: 800 }}>
+                PRESENSI HARIAN
+              </div>
+              <h3 style={{ margin: '2px 0 0', fontSize: '16px', color: '#103f3e', fontWeight: 700 }}>
+                Pencatatan Kehadiran Guru Harian
+              </h3>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button className="button button-secondary" onClick={handleSetAllPresent}>
-                <CheckCircle2 size={15} /> Set Semua Hadir
+              <button type="button" className="button button-secondary" onClick={handleSetAllPresent} title="Setel status seluruh guru aktif menjadi Hadir">
+                <CheckCircle2 size={14} /> Set Semua Hadir
               </button>
-              <button className="button button-primary" onClick={handleSaveDaily}>
-                <Save size={15} /> Simpan Presensi Hari Ini
+              <button type="button" className="button button-primary" onClick={handleSaveDaily}>
+                <Save size={14} /> Simpan Presensi Hari Ini
               </button>
             </div>
           </div>
 
-          {/* Date Picker Bar */}
-          <div className="toolbar-card" style={{ marginBottom: '16px' }}>
+          {/* Contextual Filter & Date Toolbar */}
+          <div className="toolbar-card" style={{ marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
             <div className="class-selector-wrap">
               <label htmlFor="daily-date">TANGGAL PRESENSI</label>
               <div className="select-with-icon">
-                <CalendarDays size={16} />
+                <CalendarDays size={15} />
                 <input
                   id="daily-date"
                   type="date"
                   value={currentDate}
-                  onChange={(e) => setCurrentDate(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600 }}
+                  onChange={(e) => { setCurrentDate(e.target.value); setDailyPage(1); }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600, fontSize: '12px' }}
                 />
               </div>
             </div>
+
             <div className="toolbar-divider" />
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#103f3e' }}>
-                {formatLocalDate(currentDate)}
-              </span>
-              {isCurrentDateHoliday && (
-                <span style={{ color: '#b24c3d', fontSize: '11px', fontWeight: 600 }}>
-                  ⚠️ Tanggal ini tercatat sebagai: {isCurrentDateHoliday.name}
-                </span>
-              )}
+
+            {/* Quick Status / Teacher Filter */}
+            <div className="class-selector-wrap">
+              <label htmlFor="daily-search">CARI GURU</label>
+              <div className="select-with-icon" style={{ minWidth: '160px' }}>
+                <Search size={14} />
+                <input
+                  id="daily-search"
+                  type="text"
+                  placeholder="Ketik nama / kode guru…"
+                  value={dailySearch}
+                  onChange={(e) => { setDailySearch(e.target.value); setDailyPage(1); }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', width: '100%' }}
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Table of All Teachers for the Day */}
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>No</th>
-                  <th>Kode</th>
-                  <th>Nama Lengkap Guru</th>
-                  <th>Status Kehadiran</th>
-                  <th>Keterangan / Alasan</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeTeachers.map((teacher, index) => {
-                  const entry = dailyEntries[teacher.id] ?? { status: 'HADIR', notes: '' };
-                  const cfg = STATUS_CONFIG[entry.status];
-
-                  return (
-                    <tr key={teacher.id}>
-                      <td style={{ width: '40px', textAlign: 'center', color: '#7a8a86' }}>{index + 1}</td>
-                      <td style={{ width: '80px' }}>
-                        <span className="code-pill">{teacher.code}</span>
-                      </td>
-                      <td>
-                        <strong>{teacher.name}</strong>
-                      </td>
-                      <td style={{ width: '220px' }}>
-                        <select
-                          value={entry.status}
-                          onChange={(e) =>
-                            setDailyEntries({
-                              ...dailyEntries,
-                              [teacher.id]: { ...entry, status: e.target.value as AttendanceStatus },
-                            })
-                          }
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: '8px',
-                            fontWeight: 700,
-                            fontSize: '11px',
-                            border: `1px solid ${cfg.border}`,
-                            background: cfg.bg,
-                            color: cfg.color,
-                          }}
-                        >
-                          <option value="HADIR">🟢 Hadir</option>
-                          <option value="IZIN">🟡 Izin</option>
-                          <option value="SAKIT">🔵 Sakit</option>
-                          <option value="ALPA">🔴 Alpa</option>
-                          <option value="DINAS_LUAR">🟣 Dinas Luar</option>
-                        </select>
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          placeholder="Catatan opsional..."
-                          value={entry.notes}
-                          onChange={(e) =>
-                            setDailyEntries({
-                              ...dailyEntries,
-                              [teacher.id]: { ...entry, notes: e.target.value },
-                            })
-                          }
-                          style={{
-                            width: '100%',
-                            padding: '6px 10px',
-                            fontSize: '11px',
-                            borderRadius: '6px',
-                            border: '1px solid #dce2de',
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="button button-primary" onClick={handleSaveDaily}>
-              <Save size={15} /> Simpan Presensi Hari Ini
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: INPUT ABSENSI PER BULAN (MASSAL) */}
-      {activeTab === 'monthly' && (
-        <div className="surface-card">
-          <div className="card-heading">
-            <div>
-              <div className="card-eyebrow">MONTHLY BULK ASSIGNMENT</div>
-              <h3>Input Presensi Massal Bulanan</h3>
-            </div>
-          </div>
-          <p className="settings-card-intro">
-            Terapkan status presensi (misal: set default Hadir, atau status Dinas Luar pada kegiatan madrasah) ke seluruh guru
-            atau guru terpilih untuk rentang hari aktif dalam bulan tertentu. Hari libur nasional dan hari Minggu akan otomatis dilewati.
-          </p>
-
-          <div className="settings-form-grid" style={{ marginTop: '16px' }}>
-            <div className="field-group">
-              <label>Status yang Diterapkan</label>
+            <div className="class-selector-wrap">
+              <label htmlFor="daily-filter">STATUS</label>
               <select
-                value={massMonthStatus}
-                onChange={(e) => setMassMonthStatus(e.target.value as AttendanceStatus)}
+                id="daily-filter"
+                value={dailyStatusFilter}
+                onChange={(e) => { setDailyStatusFilter(e.target.value); setDailyPage(1); }}
+                style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #d8e2dc', fontSize: '12px', fontWeight: 600 }}
               >
+                <option value="all">Semua Status</option>
                 <option value="HADIR">Hadir</option>
                 <option value="DINAS_LUAR">Dinas Luar</option>
                 <option value="IZIN">Izin</option>
@@ -515,55 +708,377 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
               </select>
             </div>
 
-            <div className="field-group">
-              <label>Target Guru</label>
+            <div className="toolbar-spacer" />
+
+            <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'right' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#103f3e' }}>
+                {formatLocalDate(currentDate)}
+              </span>
+              {isCurrentDateHoliday ? (
+                <span style={{ color: '#b24c3d', fontSize: '11px', fontWeight: 700 }}>
+                  ⚠️ Libur: {isCurrentDateHoliday.name}
+                </span>
+              ) : (
+                <span style={{ fontSize: '10.5px', color: '#5e756e' }}>
+                  Menampilkan {filteredDailyTeachers.length} dari {activeTeachers.length} guru
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Inviting Empty State Prompt for Dates with No Saved Records */}
+          {!isDateRecorded && (
+            <div
+              style={{
+                padding: '14px 18px',
+                background: '#f4fbf7',
+                border: '1.5px dashed #86efac',
+                borderRadius: '10px',
+                marginBottom: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '50%',
+                    background: '#dcfce7',
+                    color: '#15803d',
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <CalendarDays size={18} />
+                </div>
+                <div>
+                  <strong style={{ fontSize: '13px', color: '#14532d', display: 'block' }}>
+                    Belum ada presensi tersimpan untuk {formatLocalDate(currentDate)}
+                  </strong>
+                  <span style={{ fontSize: '11.5px', color: '#166534' }}>
+                    Anda dapat menetapkan seluruh guru berstatus Hadir secara instan, atau sesuaikan status pendidik pada tabel di bawah lalu simpan.
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={() => {
+                    handleSetAllPresent();
+                    handleSaveDaily();
+                  }}
+                  style={{ height: '32px', fontSize: '11.5px', gap: '6px' }}
+                >
+                  <CheckCircle2 size={14} /> Tandai Semua Hadir &amp; Simpan
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="data-table-wrap" style={{ overflowX: 'auto', border: '1px solid #e1e7e3', borderRadius: '10px' }}>
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#f5faf7', borderBottom: '1px solid #dce5df' }}>
+                  <th style={{ width: '45px', textAlign: 'center', padding: '10px' }}>No</th>
+                  <th style={{ width: '85px', textAlign: 'center', padding: '10px' }}>Kode</th>
+                  <th style={{ textAlign: 'left', padding: '10px' }}>Nama Lengkap & NIP Pendidik</th>
+                  <th style={{ width: '180px', textAlign: 'center', padding: '10px' }}>Status Kehadiran</th>
+                  <th style={{ textAlign: 'left', padding: '10px' }}>Keterangan / Catatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedDailyTeachers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: '#687a75' }}>
+                      Tidak ada guru yang sesuai dengan kriteria filter.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedDailyTeachers.map((teacher, index) => {
+                    const entry = dailyEntries[teacher.id] ?? { status: 'HADIR', notes: '' };
+                    const cfg = STATUS_CONFIG[entry.status];
+                    const globalIdx = (dailyPage - 1) * (dailyPageSize || filteredDailyTeachers.length) + index + 1;
+                    return (
+                      <tr key={teacher.id} style={{ borderBottom: '1px solid #edf2ee' }}>
+                        <td style={{ textAlign: 'center', color: '#7a8a86', fontSize: '11.5px' }}>{globalIdx}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#274b45' }}>{teacher.code}</span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <strong style={{ fontSize: '12.5px', color: '#123735' }}>{teacher.name}</strong>
+                            <span style={{ fontSize: '10.5px', color: '#6c827d' }}>
+                              {teacher.roleTitle || 'Guru Mapel'}{teacher.nip ? ` · NIP. ${teacher.nip}` : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <select
+                            value={entry.status}
+                            onChange={(e) =>
+                              setDailyEntries({
+                                ...dailyEntries,
+                                [teacher.id]: { ...entry, status: e.target.value as AttendanceStatus },
+                              })
+                            }
+                            style={{
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              fontWeight: 700,
+                              fontSize: '11.5px',
+                              border: `1px solid ${cfg.border}`,
+                              background: cfg.bg,
+                              color: cfg.color,
+                              cursor: 'pointer',
+                              width: '100%',
+                              maxWidth: '140px',
+                            }}
+                          >
+                            <option value="HADIR">Hadir (H)</option>
+                            <option value="DINAS_LUAR">Dinas Luar (DL)</option>
+                            <option value="IZIN">Izin (I)</option>
+                            <option value="SAKIT">Sakit (S)</option>
+                            <option value="ALPA">Alpa (A)</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            placeholder="Catatan opsional…"
+                            value={entry.notes}
+                            onChange={(e) =>
+                              setDailyEntries({
+                                ...dailyEntries,
+                                [teacher.id]: { ...entry, notes: e.target.value },
+                              })
+                            }
+                            style={{
+                              width: '100%',
+                              padding: '5px 8px',
+                              fontSize: '11.5px',
+                              borderRadius: '6px',
+                              border: '1px solid #dce2de',
+                              background: '#fff',
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Toolbar */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '12px',
+              flexWrap: 'wrap',
+              gap: '10px',
+              fontSize: '12px',
+              color: '#5e756e',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Tampilkan per halaman:</span>
               <select
-                value={massMonthTarget}
-                onChange={(e) => setMassMonthTarget(e.target.value as 'all' | 'selected')}
+                value={dailyPageSize}
+                onChange={(e) => { setDailyPageSize(Number(e.target.value)); setDailyPage(1); }}
+                style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d0dad4' }}
               >
-                <option value="all">Terapkan ke Semua Guru Aktif ({activeTeachers.length})</option>
-                <option value="selected">Pilih Guru Tertentu</option>
+                <option value={10}>10 Baris</option>
+                <option value={20}>20 Baris</option>
+                <option value={25}>25 Baris</option>
+                <option value={0}>Semua ({filteredDailyTeachers.length})</option>
+              </select>
+              <span>Total {filteredDailyTeachers.length} guru</span>
+            </div>
+
+            {dailyPageSize > 0 && totalDailyPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={dailyPage <= 1}
+                  onClick={() => setDailyPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft size={14} /> Sebelumnya
+                </button>
+                <span>
+                  Halaman <strong>{dailyPage}</strong> dari <strong>{totalDailyPages}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={dailyPage >= totalDailyPages}
+                  onClick={() => setDailyPage((p) => Math.min(totalDailyPages, p + 1))}
+                >
+                  Berikutnya <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: INPUT ABSENSI PER BULAN (MASSAL BULANAN)                           */}
+      {/* ========================================================================= */}
+      {activeTab === 'monthly' && (
+        <div className="surface-card" style={{ padding: '16px 20px' }}>
+          <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <div className="card-eyebrow" style={{ fontSize: '10px', color: '#55726b', fontWeight: 800 }}>
+                PRESENSI MASSAL BULANAN
+              </div>
+              <h3 style={{ margin: '2px 0 0', fontSize: '16px', color: '#103f3e', fontWeight: 700 }}>
+                Penerapan Status Presensi Massal dalam Rentang Tanggal
+              </h3>
+            </div>
+            <button
+              type="button"
+              className="button button-quiet"
+              onClick={() => setShowMonthlyHelp(!showMonthlyHelp)}
+              style={{ fontSize: '11.5px', gap: '5px' }}
+            >
+              <Info size={14} /> {showMonthlyHelp ? 'Sembunyikan Petunjuk' : 'Petunjuk Penggunaan'}
+            </button>
+          </div>
+
+          {/* Collapsible Info Panel */}
+          {showMonthlyHelp && (
+            <div
+              style={{
+                padding: '12px 14px',
+                background: '#f4faf7',
+                border: '1px solid #c9e0d5',
+                borderRadius: '8px',
+                marginBottom: '14px',
+                fontSize: '12px',
+                color: '#2a544c',
+                lineHeight: 1.5,
+              }}
+            >
+              <strong>Petunjuk Operasional:</strong> Gunakan fitur ini untuk mengatur status kehadiran default (misal: setel seluruh guru <em>Hadir</em>, atau menandai <em>Dinas Luar</em> pada agenda rapat kerja madrasah) ke seluruh atau sebagian guru. Hari libur terjadwal dan hari Minggu secara otomatis dilewati dan tidak akan tertimpa.
+            </div>
+          )}
+
+          {/* Form Controls */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+              padding: '14px',
+              background: '#fcfbf8',
+              border: '1px solid #e7e4d8',
+              borderRadius: '10px',
+              marginBottom: '14px',
+            }}
+          >
+            <div className="field-group">
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#31544e' }}>Status yang Diterapkan</label>
+              <select
+                value={massMonthStatus}
+                onChange={(e) => setMassMonthStatus(e.target.value as AttendanceStatus)}
+                style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #d2ded7', fontSize: '12.5px', fontWeight: 600 }}
+              >
+                <option value="HADIR">Hadir (H)</option>
+                <option value="DINAS_LUAR">Dinas Luar (DL)</option>
+                <option value="IZIN">Izin (I)</option>
+                <option value="SAKIT">Sakit (S)</option>
+                <option value="ALPA">Alpa (A)</option>
               </select>
             </div>
 
             <div className="field-group">
-              <label>Mulai Tanggal</label>
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#31544e' }}>Sasaran Pendidik</label>
+              <select
+                value={massMonthTarget}
+                onChange={(e) => setMassMonthTarget(e.target.value as 'all' | 'selected')}
+                style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #d2ded7', fontSize: '12.5px', fontWeight: 600 }}
+              >
+                <option value="all">Terapkan ke Seluruh Guru ({activeTeachers.length})</option>
+                <option value="selected">Pilih Guru Tertentu ({massMonthSelectedTeachers.length})</option>
+              </select>
+            </div>
+
+            <div className="field-group">
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#31544e' }}>Mulai Tanggal</label>
               <input
                 type="date"
                 value={massMonthStartDate}
                 onChange={(e) => setMassMonthStartDate(e.target.value)}
+                style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #d2ded7', fontSize: '12.5px' }}
               />
             </div>
 
             <div className="field-group">
-              <label>Sampai Tanggal</label>
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#31544e' }}>Sampai Tanggal</label>
               <input
                 type="date"
                 value={massMonthEndDate}
                 onChange={(e) => setMassMonthEndDate(e.target.value)}
+                style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #d2ded7', fontSize: '12.5px' }}
               />
             </div>
           </div>
 
+          {/* Teacher Checklist when target is 'selected' */}
           {massMonthTarget === 'selected' && (
-            <div style={{ marginTop: '16px' }}>
-              <label style={{ fontSize: '11px', fontWeight: 800, color: '#385c57', marginBottom: '8px', display: 'block' }}>
-                PILIH GURU PENERIMA:
-              </label>
+            <div style={{ marginBottom: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 800, color: '#385c57' }}>
+                  CENTANG GURU SASARAN ({massMonthSelectedTeachers.length} TERPILIH):
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    style={{ fontSize: '11px', padding: '2px 6px' }}
+                    onClick={() => setMassMonthSelectedTeachers(activeTeachers.map((t) => t.id))}
+                  >
+                    Pilih Semua
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    style={{ fontSize: '11px', padding: '2px 6px' }}
+                    onClick={() => setMassMonthSelectedTeachers([])}
+                  >
+                    Hapus Pilihan
+                  </button>
+                </div>
+              </div>
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                  gap: '8px',
-                  maxHeight: '180px',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                  gap: '6px',
+                  maxHeight: '160px',
                   overflowY: 'auto',
                   border: '1px solid #dce2dc',
-                  padding: '10px',
+                  padding: '8px 10px',
                   borderRadius: '8px',
+                  background: '#fff',
                 }}
               >
                 {activeTeachers.map((teacher) => (
-                  <label key={teacher.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px' }}>
+                  <label key={teacher.id} style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11.5px', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={massMonthSelectedTeachers.includes(teacher.id)}
@@ -575,40 +1090,53 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
                         }
                       }}
                     />
-                    <span>{teacher.name}</span>
+                    <span>{teacher.name} ({teacher.code})</span>
                   </label>
                 ))}
               </div>
             </div>
           )}
 
-          <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="button button-primary" onClick={handleSaveMassMonthly}>
-              <Check size={15} /> Terapkan Presensi Bulanan
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={handleSaveMassMonthly}
+              style={{ gap: '6px' }}
+            >
+              <Check size={14} /> Terapkan Presensi Massal
             </button>
           </div>
         </div>
       )}
 
-      {/* TAB 3: INPUT PER GURU */}
+      {/* ========================================================================= */}
+      {/* TAB 3: INPUT PRESENSI PER GURU (INDIVIDUAL LEDGER)                         */}
+      {/* ========================================================================= */}
       {activeTab === 'teacher' && (
-        <div className="surface-card">
-          <div className="card-heading">
+        <div className="surface-card" style={{ padding: '16px 20px' }}>
+          <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <div className="card-eyebrow">INDIVIDUAL TEACHER LOG</div>
-              <h3>Pencatatan Presensi per Guru</h3>
+              <div className="card-eyebrow" style={{ fontSize: '10px', color: '#55726b', fontWeight: 800 }}>
+                LEDGER INDIVIDUAL
+              </div>
+              <h3 style={{ margin: '2px 0 0', fontSize: '16px', color: '#103f3e', fontWeight: 700 }}>
+                Pencatatan Presensi Kalender per Guru
+              </h3>
             </div>
           </div>
 
-          <div className="toolbar-card" style={{ marginBottom: '16px' }}>
+          {/* Contextual Toolbar */}
+          <div className="toolbar-card" style={{ marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
             <div className="class-selector-wrap">
               <label htmlFor="teacher-picker">PILIH GURU</label>
               <div className="select-with-icon">
-                <Users size={16} />
+                <Users size={15} />
                 <select
                   id="teacher-picker"
                   value={selectedTeacherId}
-                  onChange={(e) => setSelectedTeacherId(e.target.value)}
+                  onChange={(e) => { setSelectedTeacherId(e.target.value); setLedgerPage(1); }}
+                  style={{ fontSize: '12px', fontWeight: 600 }}
                 >
                   {activeTeachers.map((t) => (
                     <option key={t.id} value={t.id}>
@@ -622,183 +1150,294 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
             <div className="toolbar-divider" />
 
             <div className="class-selector-wrap">
-              <label htmlFor="month-picker">BULAN</label>
+              <label htmlFor="month-picker">BULAN & TAHUN</label>
               <div className="select-with-icon">
-                <Calendar size={16} />
+                <Calendar size={15} />
                 <input
                   id="month-picker"
                   type="month"
                   value={currentMonth}
-                  onChange={(e) => setCurrentMonth(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600 }}
+                  onChange={(e) => { setCurrentMonth(e.target.value); setLedgerPage(1); }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600, fontSize: '12px' }}
                 />
               </div>
             </div>
+
+            <div className="class-selector-wrap">
+              <label htmlFor="ledger-filter">FILTER TAMPILAN</label>
+              <select
+                id="ledger-filter"
+                value={ledgerFilter}
+                onChange={(e) => { setLedgerFilter(e.target.value as any); setLedgerPage(1); }}
+                style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #d8e2dc', fontSize: '12px', fontWeight: 600 }}
+              >
+                <option value="all">Semua Tanggal Bulan Ini</option>
+                <option value="workdays">Hanya Hari Efektif (KBM)</option>
+                <option value="leaves">Hanya Hari Libur / Minggu</option>
+              </select>
+            </div>
           </div>
 
-          {/* Interactive Date Ledger */}
-          <div className="data-table-wrap">
-            <table className="data-table">
+          {/* Interactive Date Ledger Table */}
+          <div className="data-table-wrap" style={{ overflowX: 'auto', border: '1px solid #e1e7e3', borderRadius: '10px' }}>
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr>
-                  <th>Tanggal</th>
-                  <th>Hari</th>
-                  <th>Status Hari Ini</th>
-                  <th>Catatan</th>
-                  <th>Aksi Cepat</th>
+                <tr style={{ background: '#f5faf7', borderBottom: '1px solid #dce5df' }}>
+                  <th style={{ width: '120px', textAlign: 'left', padding: '10px' }}>Tanggal</th>
+                  <th style={{ width: '110px', textAlign: 'left', padding: '10px' }}>Hari</th>
+                  <th style={{ width: '150px', textAlign: 'center', padding: '10px' }}>Status Hari Ini</th>
+                  <th style={{ textAlign: 'left', padding: '10px' }}>Catatan</th>
+                  <th style={{ width: '130px', textAlign: 'center', padding: '10px' }}>Aksi Cepat</th>
                 </tr>
               </thead>
               <tbody>
                 {(() => {
-                  const [yStr, mStr] = currentMonth.split('-');
-                  const year = Number(yStr);
-                  const month = Number(mStr);
-                  const daysInMonth = new Date(year, month, 0).getDate();
                   const rows = [];
-
-                  for (let d = 1; d <= daysInMonth; d++) {
-                    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                    const curDate = new Date(year, month - 1, d);
+                  for (let d = 1; d <= daysInCurrentMonth; d++) {
+                    const dateStr = `${currentYearNum}-${String(currentMonthNum).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const curDate = new Date(currentYearNum, currentMonthNum - 1, d);
                     const dayName = new Intl.DateTimeFormat('id-ID', { weekday: 'long' }).format(curDate);
                     const isSunday = curDate.getDay() === 0;
                     const hol = holidays.find((h) => h.date === dateStr);
+
+                    if (ledgerFilter === 'workdays' && (isSunday || hol)) continue;
+                    if (ledgerFilter === 'leaves' && (!isSunday && !hol)) continue;
+
                     const record = attendanceList.find(
                       (a) => a.teacherId === selectedTeacherId && a.date === dateStr,
                     );
                     const cfg = record ? STATUS_CONFIG[record.status] : null;
 
-                    rows.push(
-                      <tr key={dateStr} style={{ background: isSunday ? '#faf7f5' : undefined }}>
-                        <td>
-                          <strong>{dateStr}</strong>
+                    rows.push({
+                      dateStr,
+                      dayName,
+                      isSunday,
+                      hol,
+                      record,
+                      cfg,
+                    });
+                  }
+
+                  const start = (ledgerPage - 1) * ledgerPageSize;
+                  const paginatedRows = ledgerPageSize > 0 ? rows.slice(start, start + ledgerPageSize) : rows;
+
+                  if (paginatedRows.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: '#687a75' }}>
+                          Tidak ada catatan untuk filter yang dipilih.
                         </td>
-                        <td>
-                          <span style={{ color: isSunday ? '#b24c3d' : '#274744', fontWeight: isSunday ? 700 : 500 }}>
-                            {dayName}
-                          </span>
-                          {hol && (
-                            <small style={{ display: 'block', color: '#b24c3d', fontWeight: 700 }}>
-                              {hol.name}
-                            </small>
-                          )}
-                        </td>
-                        <td>
-                          {record ? (
-                            <span
-                              style={{
-                                display: 'inline-block',
-                                padding: '4px 10px',
-                                borderRadius: '6px',
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                background: cfg?.bg,
-                                color: cfg?.color,
-                                border: `1px solid ${cfg?.border}`,
-                              }}
-                            >
-                              {cfg?.label}
-                            </span>
-                          ) : isSunday || hol ? (
-                            <span style={{ fontSize: '11px', color: '#a0aaa5' }}>Libur</span>
-                          ) : (
-                            <span style={{ fontSize: '11px', color: '#a0aaa5' }}>Belum diisi</span>
-                          )}
-                        </td>
-                        <td>
-                          <small style={{ color: '#7a8a86' }}>{record?.notes || '—'}</small>
-                        </td>
-                        <td>
-                          <button
-                            className="button button-quiet"
-                            style={{ padding: '4px 8px', fontSize: '10px' }}
-                            onClick={() => handleToggleSingleTeacherDay(dateStr, record?.status)}
-                            title="Klik untuk mengubah status bergantian"
-                          >
-                            <RefreshCw size={12} /> Ubah Status
-                          </button>
-                        </td>
-                      </tr>,
+                      </tr>
                     );
                   }
-                  return rows;
+
+                  return paginatedRows.map((item) => (
+                    <tr key={item.dateStr} style={{ borderBottom: '1px solid #edf2ee', background: item.isSunday ? '#faf8f5' : undefined }}>
+                      <td style={{ fontSize: '12px', fontWeight: 600, color: '#173637' }}>{item.dateStr}</td>
+                      <td>
+                        <span style={{ fontSize: '11.5px', color: item.isSunday ? '#b24c3d' : '#274744', fontWeight: item.isSunday ? 700 : 500 }}>
+                          {item.dayName}
+                        </span>
+                        {item.hol && (
+                          <small style={{ display: 'block', color: '#b24c3d', fontWeight: 700 }}>
+                            {item.hol.name}
+                          </small>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {item.record ? (
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              background: item.cfg?.bg,
+                              color: item.cfg?.color,
+                              border: `1px solid ${item.cfg?.border}`,
+                            }}
+                          >
+                            {item.cfg?.label}
+                          </span>
+                        ) : item.isSunday || item.hol ? (
+                          <span style={{ fontSize: '11px', color: '#97a39e', fontStyle: 'italic' }}>Libur</span>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: '#97a39e' }}>Belum diisi</span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: '11.5px', color: '#6b807b' }}>
+                        {item.record?.notes || '—'}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="button button-quiet"
+                          style={{ padding: '3px 8px', fontSize: '10.5px', gap: '4px' }}
+                          onClick={() => handleToggleSingleTeacherDay(item.dateStr, item.record?.status)}
+                          title="Klik untuk mengubah status secara berurutan"
+                        >
+                          <RefreshCw size={11} /> Ubah
+                        </button>
+                      </td>
+                    </tr>
+                  ));
                 })()}
               </tbody>
             </table>
           </div>
+
+          {/* Ledger Pagination */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '12px',
+              flexWrap: 'wrap',
+              gap: '10px',
+              fontSize: '12px',
+              color: '#5e756e',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Tampilkan per halaman:</span>
+              <select
+                value={ledgerPageSize}
+                onChange={(e) => { setLedgerPageSize(Number(e.target.value)); setLedgerPage(1); }}
+                style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d0dad4' }}
+              >
+                <option value={10}>10 Baris</option>
+                <option value={15}>15 Baris</option>
+                <option value={0}>Semua Hari ({daysInCurrentMonth})</option>
+              </select>
+            </div>
+
+            {ledgerPageSize > 0 && Math.ceil(daysInCurrentMonth / ledgerPageSize) > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={ledgerPage <= 1}
+                  onClick={() => setLedgerPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft size={14} /> Sebelumnya
+                </button>
+                <span>
+                  Halaman <strong>{ledgerPage}</strong> dari <strong>{Math.ceil(daysInCurrentMonth / ledgerPageSize)}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={ledgerPage >= Math.ceil(daysInCurrentMonth / ledgerPageSize)}
+                  onClick={() => setLedgerPage((p) => Math.min(Math.ceil(daysInCurrentMonth / ledgerPageSize), p + 1))}
+                >
+                  Berikutnya <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* TAB 4: REKAP BULANAN & EKSPOR PDF */}
+      {/* ========================================================================= */}
+      {/* TAB 4: REKAP BULANAN & EKSPOR PDF RESMI                                    */}
+      {/* ========================================================================= */}
       {activeTab === 'recap' && (
-        <div className="surface-card">
-          <div className="card-heading">
+        <div className="surface-card" style={{ padding: '16px 20px' }}>
+          <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <div className="card-eyebrow">MONTHLY RECAP & EXPORT</div>
-              <h3>Rekapitulasi Presensi Bulanan</h3>
+              <div className="card-eyebrow" style={{ fontSize: '10px', color: '#55726b', fontWeight: 800 }}>
+                REKAPITULASI & LAPORAN RESMI
+              </div>
+              <h3 style={{ margin: '2px 0 0', fontSize: '16px', color: '#103f3e', fontWeight: 700 }}>
+                Rekapitulasi Persentase Kehadiran Bulanan
+              </h3>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                className="button button-primary"
-                onClick={() => setPdfModalOpen(true)}
-              >
-                <Download size={15} /> Ekspor PDF Rekap Bulanan (A4)
-              </button>
-            </div>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => setPdfModalOpen(true)}
+              style={{ gap: '6px' }}
+            >
+              <Download size={14} /> Ekspor Dokumen PDF Resmi
+            </button>
           </div>
 
-          {/* Month selector & Teacher Checkboxes */}
-          <div className="toolbar-card" style={{ marginBottom: '16px' }}>
+          {/* Contextual Month & Teacher Filter Toolbar */}
+          <div className="toolbar-card" style={{ marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
             <div className="class-selector-wrap">
               <label htmlFor="recap-month">PILIH BULAN REKAP</label>
               <div className="select-with-icon">
-                <Calendar size={16} />
+                <Calendar size={15} />
                 <input
                   id="recap-month"
                   type="month"
                   value={currentMonth}
-                  onChange={(e) => setCurrentMonth(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600 }}
+                  onChange={(e) => { setCurrentMonth(e.target.value); setRecapPage(1); }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600, fontSize: '12px' }}
                 />
               </div>
             </div>
 
             <div className="toolbar-divider" />
 
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div className="class-selector-wrap">
+              <label htmlFor="recap-search">CARI GURU</label>
+              <div className="select-with-icon" style={{ minWidth: '160px' }}>
+                <Search size={14} />
+                <input
+                  id="recap-search"
+                  type="text"
+                  placeholder="Ketik nama guru…"
+                  value={recapSearch}
+                  onChange={(e) => { setRecapSearch(e.target.value); setRecapPage(1); }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div className="toolbar-spacer" />
+
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button
+                type="button"
                 className="button button-quiet"
-                style={{ fontSize: '11px', padding: '6px 10px' }}
+                style={{ fontSize: '11px', padding: '4px 8px' }}
                 onClick={() => setRecapSelectedTeachers(activeTeachers.map((t) => t.id))}
               >
-                Pilih Semua Guru
+                Pilih Semua ({activeTeachers.length})
               </button>
               <button
+                type="button"
                 className="button button-quiet"
-                style={{ fontSize: '11px', padding: '6px 10px' }}
+                style={{ fontSize: '11px', padding: '4px 8px' }}
                 onClick={() => setRecapSelectedTeachers([])}
               >
-                Hapus Centang
+                Hapus Pilihan
               </button>
             </div>
           </div>
 
           {/* Teacher Selection Strip */}
-          <div style={{ marginBottom: '16px', padding: '10px 14px', background: '#fcfaf5', borderRadius: '8px', border: '1px solid #e8e2d4' }}>
-            <div style={{ fontSize: '11px', fontWeight: 800, color: '#6a7e78', marginBottom: '8px' }}>
-              PILIH GURU YANG DIREKAP ({recapSelectedTeachers.length} TERPILIH):
+          <div style={{ marginBottom: '14px', padding: '8px 12px', background: '#fcfaf5', borderRadius: '8px', border: '1px solid #e8e2d4' }}>
+            <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#6a7e78', marginBottom: '6px' }}>
+              GURU TERPILIH UNTUK REKAP ({recapSelectedTeachers.length} DARI {activeTeachers.length}):
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '70px', overflowY: 'auto' }}>
               {activeTeachers.map((teacher) => (
                 <label
                   key={teacher.id}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '4px',
                     fontSize: '11px',
                     background: recapSelectedTeachers.includes(teacher.id) ? '#e9f2ee' : '#fff',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
+                    padding: '2px 6px',
+                    borderRadius: '5px',
                     border: '1px solid #d8e2dc',
                     cursor: 'pointer',
                   }}
@@ -821,216 +1460,355 @@ export function AttendanceScreen({ state, onUpdateState, onNotify }: AttendanceS
           </div>
 
           {/* Recap Summary Table */}
-          <div className="data-table-wrap">
-            <table className="data-table">
+          <div className="data-table-wrap" style={{ overflowX: 'auto', border: '1px solid #e1e7e3', borderRadius: '10px' }}>
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr>
-                  <th>No</th>
-                  <th>Kode</th>
-                  <th>Nama Lengkap Guru</th>
-                  <th>Hadir (H)</th>
-                  <th>Sakit (S)</th>
-                  <th>Izin (I)</th>
-                  <th>Alpa (A)</th>
-                  <th>Dinas Luar (DL)</th>
-                  <th>Total Hari</th>
-                  <th>% Kehadiran</th>
+                <tr style={{ background: '#f5faf7', borderBottom: '1px solid #dce5df' }}>
+                  <th onClick={() => handleToggleRecapSort('no')} style={{ width: '45px', textAlign: 'center', padding: '9px', cursor: 'pointer' }} title="Klik untuk mengurutkan">No {recapSortKey === 'no' ? (recapSortOrder === 'asc' ? '▲' : '▼') : ''}</th>
+                  <th style={{ width: '80px', textAlign: 'center', padding: '9px' }}>Kode</th>
+                  <th onClick={() => handleToggleRecapSort('name')} style={{ textAlign: 'left', padding: '9px', cursor: 'pointer' }} title="Klik untuk mengurutkan">Nama Lengkap & NIP Pendidik {recapSortKey === 'name' ? (recapSortOrder === 'asc' ? '▲' : '▼') : ''}</th>
+                  <th onClick={() => handleToggleRecapSort('hadir')} style={{ width: '70px', textAlign: 'center', padding: '9px', cursor: 'pointer' }} title="Klik untuk mengurutkan">Hadir (H) {recapSortKey === 'hadir' ? (recapSortOrder === 'asc' ? '▲' : '▼') : ''}</th>
+                  <th style={{ width: '70px', textAlign: 'center', padding: '9px' }}>Dinas (DL)</th>
+                  <th style={{ width: '65px', textAlign: 'center', padding: '9px' }}>Sakit (S)</th>
+                  <th style={{ width: '65px', textAlign: 'center', padding: '9px' }}>Izin (I)</th>
+                  <th style={{ width: '65px', textAlign: 'center', padding: '9px' }}>Alpa (A)</th>
+                  <th style={{ width: '90px', textAlign: 'center', padding: '9px' }}>Total (H+DL)</th>
+                  <th style={{ width: '80px', textAlign: 'center', padding: '9px' }}>Target (HE)</th>
+                  <th onClick={() => handleToggleRecapSort('rate')} style={{ width: '85px', textAlign: 'center', padding: '9px', cursor: 'pointer' }} title="Klik untuk mengurutkan">% Hadir {recapSortKey === 'rate' ? (recapSortOrder === 'asc' ? '▲' : '▼') : ''}</th>
+                  <th style={{ width: '120px', textAlign: 'center', padding: '9px' }}>Predikat</th>
                 </tr>
               </thead>
               <tbody>
-                {recapData.map((row) => (
-                  <tr key={row.teacher.id}>
-                    <td style={{ textAlign: 'center', color: '#7a8a86' }}>{row.no}</td>
-                    <td>
-                      <span className="code-pill">{row.teacher.code}</span>
-                    </td>
-                    <td>
-                      <strong>{row.teacher.name}</strong>
-                    </td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#1f6952' }}>{row.hadir}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#4b7596' }}>{row.sakit}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#9c6f28' }}>{row.izin}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#b24c3d' }}>{row.alpa}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#685094' }}>{row.dinas}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.total}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          fontWeight: 800,
-                          fontSize: '11px',
-                          background: row.rate >= 85 ? '#e9f5ee' : '#fef2f0',
-                          color: row.rate >= 85 ? '#1f6952' : '#b24c3d',
-                        }}
-                      >
-                        {row.rate}%
-                      </span>
+                {paginatedRecapRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} style={{ textAlign: 'center', padding: '24px', color: '#687a75' }}>
+                      Tidak ada data guru untuk rekapitulasi.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  paginatedRecapRows.map((r) => {
+                    const totalPresent = r.hadir + r.dinas;
+                    let predikat = 'Sangat Baik';
+                    let predikatColor = '#1f6952';
+                    if (r.rate < 75) {
+                      predikat = 'Perlu Pembinaan';
+                      predikatColor = '#b24c3d';
+                    } else if (r.rate < 85) {
+                      predikat = 'Cukup';
+                      predikatColor = '#9c6f28';
+                    } else if (r.rate < 95) {
+                      predikat = 'Baik';
+                      predikatColor = '#2f7771';
+                    }
+                    return (
+                      <tr key={r.teacher.id} style={{ borderBottom: '1px solid #edf2ee' }}>
+                        <td style={{ textAlign: 'center', color: '#7a8a86', fontSize: '11px' }}>{r.no}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#274b45' }}>{r.teacher.code}</span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <strong style={{ fontSize: '12px', color: '#123735' }}>{r.teacher.name}</strong>
+                            <span style={{ fontSize: '10px', color: '#6c827d' }}>
+                              {r.teacher.roleTitle || 'Guru Mapel'}{r.teacher.nip ? ` · NIP. ${r.teacher.nip}` : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'center', fontWeight: 600, color: '#1f6952' }}>{r.hadir}</td>
+                        <td style={{ textAlign: 'center', fontWeight: 600, color: '#685094' }}>{r.dinas}</td>
+                        <td style={{ textAlign: 'center', color: '#4b7596' }}>{r.sakit}</td>
+                        <td style={{ textAlign: 'center', color: '#9c6f28' }}>{r.izin}</td>
+                        <td style={{ textAlign: 'center', color: r.alpa > 0 ? '#b24c3d' : '#8a9b95', fontWeight: r.alpa > 0 ? 700 : 400 }}>
+                          {r.alpa}
+                        </td>
+                        <td style={{ textAlign: 'center', fontWeight: 700, color: '#0b3435' }}>{totalPresent}</td>
+                        <td style={{ textAlign: 'center', color: '#687a75' }}>{effectiveDaysInMonth}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <strong style={{ fontSize: '12px', color: predikatColor }}>{r.rate}%</strong>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: predikatColor }}>{predikat}</span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
+          </div>
 
-            {recapData.length === 0 && (
-              <div className="empty-state">
-                <Users size={28} />
-                <h3>Belum ada guru yang dipilih</h3>
-                <p>Pilih satu atau lebih guru pada daftar di atas untuk menampilkan rekap.</p>
+          {/* Recap Pagination Toolbar */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '12px',
+              flexWrap: 'wrap',
+              gap: '10px',
+              fontSize: '12px',
+              color: '#5e756e',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Tampilkan per halaman:</span>
+              <select
+                value={recapPageSize}
+                onChange={(e) => { setRecapPageSize(Number(e.target.value)); setRecapPage(1); }}
+                style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d0dad4' }}
+              >
+                <option value={10}>10 Baris</option>
+                <option value={20}>20 Baris</option>
+                <option value={25}>25 Baris</option>
+                <option value={0}>Semua ({sortedRecapRows.length})</option>
+              </select>
+              <span>Total {sortedRecapRows.length} guru</span>
+            </div>
+
+            {recapPageSize > 0 && totalRecapPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={recapPage <= 1}
+                  onClick={() => setRecapPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft size={14} /> Sebelumnya
+                </button>
+                <span>
+                  Halaman <strong>{recapPage}</strong> dari <strong>{totalRecapPages}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={recapPage >= totalRecapPages}
+                  onClick={() => setRecapPage((p) => Math.min(totalRecapPages, p + 1))}
+                >
+                  Berikutnya <ChevronRight size={14} />
+                </button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* TAB 5: PENGATURAN HARI LIBUR */}
+      {/* ========================================================================= */}
+      {/* TAB 5: PENGATURAN HARI LIBUR & KALENDER MADRASAH                           */}
+      {/* ========================================================================= */}
       {activeTab === 'holidays' && (
-        <div className="surface-card">
-          <div className="card-heading">
+        <div className="surface-card" style={{ padding: '16px 20px' }}>
+          <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <div className="card-eyebrow">HOLIDAY & NON-EFFECTIVE DAYS</div>
-              <h3>Pengaturan Hari Libur Madrasah</h3>
+              <div className="card-eyebrow" style={{ fontSize: '10px', color: '#55726b', fontWeight: 800 }}>
+                KALENDER LIBUR MADRASAH
+              </div>
+              <h3 style={{ margin: '2px 0 0', fontSize: '16px', color: '#103f3e', fontWeight: 700 }}>
+                Daftar Hari Libur Nasional & Khusus Madrasah
+              </h3>
             </div>
           </div>
-          <p className="settings-card-intro">
-            Daftar hari libur nasional, libur cuti bersama, atau hari libur madrasah. Hari yang tercatat sebagai hari libur
-            tidak dihitung sebagai alpa pada perhitungan kehadiran efektif.
-          </p>
 
-          {/* Add / Edit Holiday Form */}
+          {/* Form Tambah/Edit Hari Libur */}
           <form
             onSubmit={handleSaveHoliday}
             style={{
               display: 'flex',
-              gap: '12px',
-              flexWrap: 'wrap',
+              gap: '10px',
               alignItems: 'flex-end',
-              background: editingHolidayId ? '#f0f7f4' : '#f8faf7',
-              padding: '14px',
-              borderRadius: '10px',
-              border: editingHolidayId ? '1px solid #95d1c2' : '1px solid #dce4dc',
-              marginBottom: '18px',
+              flexWrap: 'wrap',
+              padding: '12px 14px',
+              background: '#f9fcfa',
+              border: '1px solid #d8e5df',
+              borderRadius: '8px',
+              marginBottom: '16px',
             }}
           >
-            <div style={{ flex: '0 0 180px' }}>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#274744', display: 'block', marginBottom: '4px' }}>
-                Tanggal Libur
-              </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#31544e' }}>Tanggal Libur</label>
               <input
                 type="date"
-                required
                 value={newHolidayDate}
                 onChange={(e) => setNewHolidayDate(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #c8d3cc' }}
+                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #c9d8d1', fontSize: '12px' }}
+                required
               />
             </div>
 
-            <div style={{ flex: '1 1 250px' }}>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#274744', display: 'block', marginBottom: '4px' }}>
-                Nama Hari Libur / Keterangan
-              </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '200px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#31544e' }}>Nama Hari Libur / Keterangan</label>
               <input
                 type="text"
-                required
-                placeholder="Contoh: Hari Kemerdekaan RI, Libur Semester..."
+                placeholder="Contoh: Libur Awal Ramadhan, Hari Santri…"
                 value={newHolidayName}
                 onChange={(e) => setNewHolidayName(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #c8d3cc' }}
+                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #c9d8d1', fontSize: '12px' }}
+                required
               />
             </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="submit" className="button button-primary">
-                {editingHolidayId ? (
-                  <>
-                    <Save size={15} /> Simpan Perubahan
-                  </>
-                ) : (
-                  <>
-                    <Plus size={15} /> Tambah Hari Libur
-                  </>
-                )}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button type="submit" className="button button-primary" style={{ gap: '6px', height: '34px' }}>
+                {editingHolidayId ? <Save size={13} /> : <Plus size={13} />}
+                {editingHolidayId ? 'Simpan Perubahan' : 'Tambah Hari Libur'}
               </button>
               {editingHolidayId && (
                 <button
                   type="button"
-                  className="button button-secondary"
+                  className="button button-quiet"
                   onClick={handleCancelEditHoliday}
+                  style={{ height: '34px' }}
                 >
-                  Batal Edit
+                  <X size={13} /> Batal
                 </button>
               )}
             </div>
           </form>
 
-          {/* Holidays Table */}
-          <div className="data-table-wrap">
-            <table className="data-table">
+          {/* Holiday Search */}
+          <div className="toolbar-card" style={{ marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div className="class-selector-wrap" style={{ flex: 1, maxWidth: '280px' }}>
+              <label htmlFor="hol-search">CARI HARI LIBUR</label>
+              <div className="select-with-icon">
+                <Search size={14} />
+                <input
+                  id="hol-search"
+                  type="text"
+                  placeholder="Ketik nama atau tanggal libur…"
+                  value={holidaySearch}
+                  onChange={(e) => { setHolidaySearch(e.target.value); setHolidayPage(1); }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', width: '100%' }}
+                />
+              </div>
+            </div>
+            <div className="toolbar-spacer" />
+            <span style={{ fontSize: '11.5px', color: '#687a75' }}>
+              Total {filteredHolidays.length} hari libur terdaftar
+            </span>
+          </div>
+
+          {/* Holiday Table */}
+          <div className="data-table-wrap" style={{ overflowX: 'auto', border: '1px solid #e1e7e3', borderRadius: '10px' }}>
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr>
-                  <th>No</th>
-                  <th>Tanggal</th>
-                  <th>Hari</th>
-                  <th>Nama Hari Libur</th>
-                  <th style={{ textAlign: 'right' }}>Aksi</th>
+                <tr style={{ background: '#f5faf7', borderBottom: '1px solid #dce5df' }}>
+                  <th style={{ width: '45px', textAlign: 'center', padding: '9px' }}>No</th>
+                  <th style={{ width: '130px', textAlign: 'left', padding: '9px' }}>Tanggal</th>
+                  <th style={{ textAlign: 'left', padding: '9px' }}>Nama Hari Libur</th>
+                  <th style={{ width: '100px', textAlign: 'center', padding: '9px' }}>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {holidays.map((hol, idx) => (
-                  <tr key={hol.id} style={{ background: editingHolidayId === hol.id ? '#f3fbf7' : undefined }}>
-                    <td style={{ width: '50px', textAlign: 'center', color: '#7a8a86' }}>{idx + 1}</td>
-                    <td style={{ width: '140px' }}>
-                      <strong>{hol.date}</strong>
-                    </td>
-                    <td style={{ width: '120px' }}>
-                      {formatLocalDate(hol.date).split(',')[0]}
-                    </td>
-                    <td>
-                      <span style={{ fontWeight: 600, color: '#274744' }}>{hol.name}</span>
-                    </td>
-                    <td style={{ width: '90px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '4px', justifyContent: 'flex-end' }}>
-                        <button
-                          className="icon-button table-row-action"
-                          style={{ color: '#24635e' }}
-                          onClick={() => handleStartEditHoliday(hol)}
-                          title="Edit hari libur"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                        <button
-                          className="icon-button table-row-action"
-                          onClick={() => handleDeleteHoliday(hol.id)}
-                          title="Hapus hari libur"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+                {paginatedHolidays.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: 'center', padding: '24px', color: '#687a75' }}>
+                      Belum ada hari libur yang terdaftar.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  paginatedHolidays.map((hol, idx) => {
+                    const globalIdx = (holidayPage - 1) * (holidayPageSize || filteredHolidays.length) + idx + 1;
+                    return (
+                      <tr key={hol.id} style={{ borderBottom: '1px solid #edf2ee' }}>
+                        <td style={{ textAlign: 'center', color: '#7a8a86', fontSize: '11px' }}>{globalIdx}</td>
+                        <td style={{ fontSize: '12px', fontWeight: 600, color: '#103f3e' }}>{hol.date}</td>
+                        <td style={{ fontSize: '12px', color: '#274744', fontWeight: 600 }}>{hol.name}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              onClick={() => handleStartEditHoliday(hol)}
+                              title="Edit hari libur"
+                              style={{ width: '28px', height: '28px' }}
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              onClick={() => handleDeleteHoliday(hol.id)}
+                              title="Hapus hari libur"
+                              style={{ width: '28px', height: '28px', color: '#b24c3d' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
+          </div>
 
-            {holidays.length === 0 && (
-              <div className="empty-state">
-                <Clock size={28} />
-                <h3>Belum ada hari libur yang tercatat</h3>
-                <p>Tambahkan hari libur nasional atau cuti madrasah melalui form di atas.</p>
+          {/* Holiday Pagination */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '12px',
+              flexWrap: 'wrap',
+              gap: '10px',
+              fontSize: '12px',
+              color: '#5e756e',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Tampilkan:</span>
+              <select
+                value={holidayPageSize}
+                onChange={(e) => { setHolidayPageSize(Number(e.target.value)); setHolidayPage(1); }}
+                style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d0dad4' }}
+              >
+                <option value={10}>10 Baris</option>
+                <option value={20}>20 Baris</option>
+                <option value={0}>Semua ({filteredHolidays.length})</option>
+              </select>
+            </div>
+
+            {holidayPageSize > 0 && totalHolidayPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={holidayPage <= 1}
+                  onClick={() => setHolidayPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft size={14} /> Sebelumnya
+                </button>
+                <span>
+                  Halaman <strong>{holidayPage}</strong> dari <strong>{totalHolidayPages}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  style={{ padding: '4px 8px' }}
+                  disabled={holidayPage >= totalHolidayPages}
+                  onClick={() => setHolidayPage((p) => Math.min(totalHolidayPages, p + 1))}
+                >
+                  Berikutnya <ChevronRight size={14} />
+                </button>
               </div>
             )}
           </div>
         </div>
       )}
-      {/* Formal A4 Attendance PDF Export Modal */}
-      <AttendancePdfExportModal
-        state={state}
-        isOpen={pdfModalOpen}
-        onClose={() => setPdfModalOpen(false)}
-        onNotify={onNotify}
-        initialMonth={currentMonth}
-      />
+
+      {/* Ekspor PDF Modal */}
+      {pdfModalOpen && (
+        <AttendancePdfExportModal
+          state={state}
+          isOpen={pdfModalOpen}
+          initialMonth={currentMonth}
+          onClose={() => setPdfModalOpen(false)}
+          onNotify={onNotify}
+        />
+      )}
     </div>
   );
 }

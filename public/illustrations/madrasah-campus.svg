@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" fill="none">
+<defs>
+ <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#EAF8F1"/><stop offset="1" stop-color="#CDE8DD"/></linearGradient>
+ <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFFDF5"/><stop offset="1" stop-color="#E9F2E7"/></linearGradient>
+ <linearGradient id="dome" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#69B8A5"/><stop offset="1" stop-color="#168878"/></linearGradient>
+ <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8DC9A5"/><stop offset="1" stop-color="#438E70"/></linearGradient>
+</defs>
+<rect width="960" height="520" fill="url(#sky)"/>
+<circle cx="755" cy="94" r="52" fill="#FFF8DA" opacity=".8"/>
+<path d="M0 360C150 310 242 346 365 326s224-53 337-21 181 27 258-6v221H0V360Z" fill="#C7E5D4"/>
+<path d="M0 420c140-48 254-12 382-34 148-25 255-12 578 4v130H0V420Z" fill="#A8D5B8"/>
+<!-- campus main block -->
+<path d="M190 284h580v185H190z" fill="url(#wall)" stroke="#D1E4D8" stroke-width="5"/>
+<path d="M160 284 480 164l320 120H160Z" fill="#F7F6E8" stroke="#D2E5D9" stroke-width="5"/>
+<path d="M420 212h120v-56h-120z" fill="#E8F3E9"/>
+<path d="M455 210v-46c0-45 90-45 90 0v46" fill="url(#dome)" stroke="#287F70" stroke-width="4"/>
+<path d="M500 112v-18m-9 9h18" stroke="#278A79" stroke-width="5" stroke-linecap="round"/>
+<path d="M240 284v-80c0-50 82-50 82 0v80" fill="url(#dome)"/>
+<path d="M274 154v-28m-10 13h20" stroke="#278A79" stroke-width="4" stroke-linecap="round"/>
+<path d="M640 284v-80c0-50 82-50 82 0v80" fill="url(#dome)"/>
+<path d="M674 154v-28m-10 13h20" stroke="#278A79" stroke-width="4" stroke-linecap="round"/>
+<g fill="#8ABAA7"><path d="M220 326h52v143h-52zM688 326h52v143h-52z"/></g>
+<g fill="#F9FCF7"><path d="M233 342h26v54h-26zM701 342h26v54h-26z"/></g>
+<g fill="#D9EDE2" stroke="#B8D8C8" stroke-width="3"><path d="M330 332h68v137h-68zM566 332h68v137h-68z"/></g>
+<g fill="#FFFDF7"><path d="M344 348h40v58h-40zM580 348h40v58h-40z"/></g>
+<path d="M450 469v-91c0-46 60-46 60 0v91" fill="#4D9985"/>
+<path d="M466 469v-86c0-25 28-25 28 0v86" fill="#F8FBF4"/>
+<path d="M170 470h620" stroke="#7FB89A" stroke-width="7" stroke-linecap="round"/>
+<!-- minaret -->
+<path d="M112 286h46v183h-46z" fill="#F8F6E8" stroke="#D3E4D8" stroke-width="4"/>
+<path d="M104 286 135 232l31 54h-62Z" fill="#248D7A"/>
+<path d="M121 232v-60h28v60" fill="#E7F2E7"/>
+<path d="M114 173 135 135l21 38h-42Z" fill="#248D7A"/>
+<path d="M135 135V112" stroke="#248D7A" stroke-width="4"/>
+<!-- trees -->
+<g fill="url(#leaf)"><circle cx="80" cy="350" r="54"/><circle cx="120" cy="324" r="45"/><circle cx="825" cy="330" r="64"/><circle cx="875" cy="352" r="48"/><circle cx="790" cy="290" r="40"/></g>
+<g stroke="#8C7651" stroke-width="12" stroke-linecap="round"><path d="M98 380v91M845 365v106"/></g>
+<g fill="#F5FBF4" opacity=".9"><path d="M44 420h70v49H44zM804 422h90v47h-90z"/></g>
+<!-- foreground greenery -->
+<g fill="#4F9B79"><path d="M0 500c48-90 68-95 98 0H0ZM65 520c40-110 73-111 110 0H65ZM810 520c48-100 73-102 112 0H810ZM884 520c30-70 54-73 76 0h-76Z"/></g>
+<g fill="#F6FBF5" opacity=".65"><path d="M40 492c23-33 36-33 48 0-23-9-36-9-48 0ZM840 494c25-35 40-35 54 0-26-9-39-9-54 0Z"/></g>
+</svg>
